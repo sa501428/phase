@@ -328,6 +328,9 @@ canvas {
   display: block;
   width: 100%;
   outline-offset: -3px;
+  cursor: grab;
+  user-select: none;
+  touch-action: pan-y;
 }
 .rowpage {
   display: flex;
@@ -453,4 +456,8 @@ footer span {
   .badges {
     flex-wrap: wrap;
   }
+}
+
+#pileup.dragging {
+  cursor: grabbing;
 }

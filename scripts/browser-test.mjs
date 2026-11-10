@@ -45,6 +45,42 @@ try {
   assert.match(await page.textContent("#readTable"), /Read 44/);
   await page.click("#collapseAll");
   assert.match(await page.textContent("#rowCount"), /of 4/);
+  // A drag moves genomic content, while a click still expands its family.
+  await page.click("#zoomIn");
+  const bounds = await page.locator("#pileup").boundingBox();
+  const expandedBefore = await page
+    .locator('#readTable tr[aria-expanded="true"]')
+    .count();
+  const rangeBefore = await page
+    .locator("#pileup")
+    .getAttribute("data-view-start");
+  await page.mouse.move(bounds.x + 350, bounds.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 250, bounds.y + 120, { steps: 8 });
+  await page.mouse.up();
+  const rangeAfterLeft = await page
+    .locator("#pileup")
+    .getAttribute("data-view-start");
+  assert.notEqual(rangeBefore, rangeAfterLeft);
+  assert.equal(
+    await page.locator('#readTable tr[aria-expanded="true"]').count(),
+    expandedBefore,
+  );
+  await page.mouse.move(bounds.x + 250, bounds.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 350, bounds.y + 120, { steps: 8 });
+  await page.mouse.up();
+  assert.equal(
+    await page.locator("#pileup").getAttribute("data-view-start"),
+    rangeBefore,
+  );
+  assert.equal(
+    await page
+      .locator("#pileup")
+      .evaluate((c) => c.classList.contains("dragging")),
+    false,
+  );
+  await page.click("#fit");
   await page.locator("#events button").first().click();
   await page.waitForFunction(() =>
     document.querySelector("#alignment").textContent.includes("Candidate"),

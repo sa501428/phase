@@ -163,6 +163,8 @@ function stop() {
   );
 }
 function clear() {
+  finishDrag(true);
+  suppressFamilyClick = false;
   worker?.terminate();
   worker = null;
   if (url) URL.revokeObjectURL(url);
@@ -216,6 +218,9 @@ function clear() {
     $(id).replaceChildren();
   $("pileup").width = 1;
   $("pileup").height = 1;
+  delete $("pileup").dataset.viewStart;
+  delete $("pileup").dataset.viewEnd;
+  $("rowCount").textContent = "";
   $("workspace").hidden = true;
   $("expanded").hidden = true;
   $("empty").hidden = false;
@@ -606,6 +611,8 @@ function showEvent(e) {
 let painted = [];
 function draw() {
   if (!data) return;
+  $("pileup").dataset.viewStart = String(view.start);
+  $("pileup").dataset.viewEnd = String(view.end);
   const canvas = $("pileup"),
     width = Math.max(400, $("canvasWrap").clientWidth),
     all = visibleReads();
@@ -865,7 +872,84 @@ function geometry(row, ids) {
   geometryCache.set(key, g);
   return g;
 }
+let dragState = null,
+  dragFrame = 0,
+  suppressFamilyClick = false;
+function applyDrag() {
+  if (!dragState?.moved || !data || !view) return;
+  const span = dragState.end - dragState.start;
+  const next = Math.max(
+    data.region.start,
+    Math.min(
+      data.region.end - span,
+      Math.round(
+        dragState.start +
+          ((dragState.x - dragState.currentX) * span) / dragState.width,
+      ),
+    ),
+  );
+  if (view.start === next) return;
+  view.start = next;
+  view.end = next + span;
+  layoutCache = null;
+  draw();
+}
+function finishDrag(cancelled = false) {
+  if (dragFrame) cancelAnimationFrame(dragFrame);
+  dragFrame = 0;
+  if (!dragState) return;
+  if (!cancelled) applyDrag();
+  const id = dragState.id;
+  suppressFamilyClick = dragState.moved;
+  dragState = null;
+  const canvas = $("pileup");
+  canvas.classList.remove("dragging");
+  if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+}
+$("pileup").onpointerdown = (e) => {
+  if (!data || !view || e.button !== 0 || !e.isPrimary || dragState) return;
+  const canvas = $("pileup"),
+    bounds = canvas.getBoundingClientRect();
+  suppressFamilyClick = false;
+  dragState = {
+    id: e.pointerId,
+    x: e.clientX,
+    currentX: e.clientX,
+    start: view.start,
+    end: view.end,
+    width: Math.max(1, bounds.width - 130),
+    moved: false,
+  };
+  canvas.setPointerCapture(e.pointerId);
+  canvas.focus({ preventScroll: true });
+};
+$("pileup").onpointermove = (e) => {
+  if (!dragState || e.pointerId !== dragState.id) return;
+  dragState.currentX = e.clientX;
+  if (Math.abs(e.clientX - dragState.x) > 4) {
+    dragState.moved = true;
+    $("pileup").classList.add("dragging");
+  }
+  if (dragState.moved && !dragFrame)
+    dragFrame = requestAnimationFrame(() => {
+      dragFrame = 0;
+      applyDrag();
+    });
+};
+$("pileup").onpointerup = (e) => {
+  if (dragState?.id === e.pointerId) finishDrag();
+};
+$("pileup").onpointercancel = (e) => {
+  if (dragState?.id === e.pointerId) finishDrag(true);
+};
+$("pileup").onlostpointercapture = (e) => {
+  if (dragState?.id === e.pointerId) finishDrag(true);
+};
 $("pileup").onclick = (e) => {
+  if (suppressFamilyClick) {
+    suppressFamilyClick = false;
+    return;
+  }
   const y = e.clientY - $("pileup").getBoundingClientRect().top;
   if (y < 110) return;
   const row = visibleReads()[Math.floor((y - 110 + scrollOffset) / ROW_HEIGHT)];
