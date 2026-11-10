@@ -167,6 +167,12 @@
           <div id="metrics" class="metrics"></div>
           <div class="viewtools">
             <label
+              >Collapse level<select id="detail">
+                <option value="overview">Haplotype groups</option>
+                <option value="families">Exact-pattern families</option>
+              </select></label
+            >
+            <label
               >Track layout<select id="sort">
                 <option value="group">Group by local pattern</option>
                 <option value="start">Genomic start</option>
@@ -186,15 +192,17 @@
             ><button id="right">→</button><button id="fit">Fit</button>
           </div>
           <label class="check"
-            ><input id="collapse" type="checkbox" checked /> Collapse matching
-            fragment families</label
-          ><button id="collapseAll">Collapse all families</button
-          ><button id="expandAll">Expand all families</button>
+            ><input id="collapse" type="checkbox" checked /> Collapse group
+            rows</label
+          ><button id="collapseAll">Collapse all groups</button
+          ><button id="expandAll">Expand all groups</button>
           <p class="muted">
             Drag left/right to pan after zooming in. Paired ends share a row;
-            thin connectors indicate unsequenced inserts. Family counts retain
-            every fragment, including duplicate-marked records. Click a family
-            or press Enter to expand it.
+            thin connectors indicate unsequenced inserts. The default shows one
+            row per supported local group, with separate collapsed
+            ambiguous/uninformative rows. Counts retain every fragment. Click a
+            row to inspect its pairs. Groups are local to each phase block; a
+            fragment can appear in more than one block.
           </p>
           <div class="legend">
             <span class="a">A</span><span class="c">C</span

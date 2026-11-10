@@ -1,3 +1,4 @@
+import { consensusGeometry } from "./consensus.js";
 import hg19 from "../references/hg19.js";
 import hg38 from "../references/hg38.js";
 import { ungzip } from "pako";
@@ -200,6 +201,8 @@ function clear() {
   ])
     $(id).value = "";
   $("confirm").checked = false;
+  $("detail").value = "overview";
+  $("collapse").checked = true;
   for (const id of ["locus", "transcript", "sample", "v1", "v2"])
     $(id).replaceChildren();
   for (const id of [
@@ -368,7 +371,7 @@ $("transcript").onchange = () => {
 function visibleReads() {
   if (!data) return [];
   if (!layoutCache)
-    layoutCache = layoutFamilies(data.result.families, data.result.reads, {
+    layoutCache = layoutFamilies(displayGroups(), data.result.reads, {
       start: view.start,
       end: view.end,
       layer: $("layer").value,
@@ -377,6 +380,11 @@ function visibleReads() {
       expanded: expandedFamilies,
     });
   return layoutCache;
+}
+function displayGroups() {
+  return $("detail").value === "overview"
+    ? data.result.overview
+    : data.result.families;
 }
 function invalidateLayout() {
   layoutCache = null;
@@ -444,7 +452,9 @@ function render() {
       `${v.ref || "∅"} → ${v.alt || "∅"}`,
       v.support,
       v.overlap
-        ? "Overlapping allele · inspect locally"
+        ? v.complexOverlap
+          ? "Overlapping allele · inspect locally"
+          : "Multiallelic SNV"
         : v.supplied
           ? "Supplied / observed"
           : "Discovered",
@@ -683,19 +693,31 @@ function draw() {
     c.fillStyle = "#365f50";
     const label =
       row.type === "family"
-        ? `${expandedFamilies.has(family.id) ? "▾" : "▸"} F${family.id + 1} ×${row.count}`
+        ? `${expandedFamilies.has(family.id) ? "▾" : "▸"} ${family.kind === "overview" ? family.label : `F${family.id + 1}`} ×${row.count}`
         : `  ${row.member.paired ? (row.member.matePresent ? "Pair" : "Single end") : "Read"} ${row.member.id + 1}`;
     c.fillText(
       label + (family.structuralLinks?.length ? " · SV" : ""),
       6,
       y + 10,
+      left - 12,
     );
     c.fillStyle = "#7d8e84";
     c.fillText(row.group.slice(0, 17), 6, y + 21);
     c.save();
     c.beginPath();
     c.rect(left, y, width - left - 20, ROW_HEIGHT);
+
     c.clip();
+    if (family.scope) {
+      c.beginPath();
+      c.rect(
+        x(family.scope.start),
+        y,
+        Math.max(0, (family.scope.end - family.scope.start) * scale),
+        ROW_HEIGHT,
+      );
+      c.clip();
+    }
     const visibleIDs =
       row.type === "family"
         ? row.members.flatMap((m) => m.readIds)
@@ -756,7 +778,7 @@ function draw() {
   const families = new Set(all.map((row) => row.family.id));
   const fragmentCount = data.result.families.reduce((n, f) => n + f.count, 0);
   $("rowCount").textContent =
-    `${families.size} families in view · rows ${all.length ? rows + 1 : 0}–${Math.min(rows + Math.ceil(viewportHeight / ROW_HEIGHT), all.length)} of ${all.length} · ${fragmentCount} total fragments / ${data.result.reads.length} records retained · no downsampling`;
+    `${families.size} ${$("detail").value === "overview" ? "group rows" : "families"} in view · rows ${all.length ? rows + 1 : 0}–${Math.min(rows + Math.ceil(viewportHeight / ROW_HEIGHT), all.length)} of ${all.length} · ${fragmentCount} total fragments / ${data.result.reads.length} records retained · no downsampling`;
   $("readTable").replaceChildren();
   for (const row of painted) {
     const tr = el("tr"),
@@ -764,7 +786,7 @@ function draw() {
       member = row.type === "fragment" ? row.member : null;
     for (const value of [
       row.type === "family"
-        ? `Family ${family.id + 1} · ${row.count} fragments`
+        ? `${family.kind === "overview" ? family.label : `Family ${family.id + 1}`} · ${row.count} fragments`
         : `${member.paired ? (member.matePresent ? "Pair" : "Single end") : "Read"} ${member.id + 1}`,
       row.start + 1,
       member
@@ -819,9 +841,37 @@ function readIndex() {
 function geometry(row, ids) {
   const key =
     row.type === "family"
-      ? `f${row.family.id}:${$("layer").value}`
+      ? `${row.family.kind === "overview" ? "g" : "f"}${row.family.id}:${$("layer").value}`
       : `m${row.member.id}:${$("layer").value}`;
   if (geometryCache.has(key)) return geometryCache.get(key);
+  const summaryMembers =
+    row.type === "family"
+      ? row.family.members
+          .map((m) => ({
+            ...m,
+            readIds: m.readIds.filter(
+              (id) =>
+                $("layer").value === "all" ||
+                ($("layer").value === "excluded"
+                  ? readIndex().get(id).excluded
+                  : !readIndex().get(id).excluded),
+            ),
+          }))
+          .filter((m) => m.readIds.length)
+      : null;
+  if (summaryMembers) ids = summaryMembers.flatMap((m) => m.readIds);
+
+  if (row.type === "family" && row.family.kind === "overview") {
+    const glyph = consensusGeometry(
+      summaryMembers,
+      readIndex(),
+      data.reference,
+      data.region.start,
+      data.result.settings,
+    );
+    geometryCache.set(key, glyph);
+    return glyph;
+  }
   const segments = [],
     mismatches = new Map(),
     events = new Map(),
@@ -978,7 +1028,7 @@ $("collapseAll").onclick = () => {
   draw();
 };
 $("expandAll").onclick = () => {
-  for (const f of data?.result.families || []) expandedFamilies.add(f.id);
+  for (const f of data ? displayGroups() : []) expandedFamilies.add(f.id);
   invalidateLayout();
   draw();
 };
@@ -1032,6 +1082,12 @@ for (const id of ["sort", "layer", "clips"])
     invalidateLayout();
     draw();
   };
+$("detail").onchange = () => {
+  expandedFamilies.clear();
+  geometryCache.clear();
+  invalidateLayout();
+  draw();
+};
 $("pileup").onkeydown = (e) => {
   if (
     ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(

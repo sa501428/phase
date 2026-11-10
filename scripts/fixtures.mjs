@@ -199,12 +199,37 @@ export function structuralFixture() {
   }
   return fixture(d);
 }
+export function noisyFixture() {
+  const d = synthetic();
+  d.reads = [];
+  for (let i = 0; i < 200; i++) {
+    const start = 1050 + i,
+      seq = d.reference.slice(start - 1000, start - 920).split("");
+    seq[20] = seq[20] === "A" ? "C" : "A";
+    d.reads.push({
+      id: i,
+      name: "noisy-" + i,
+      start,
+      end: start + 80,
+      seq: seq.join(""),
+      qual: Array(80).fill(35),
+      cigar: "80M",
+      flags: 0,
+      mq: 60,
+      rg: "synthetic",
+      sample: "synthetic",
+      mate: -1,
+    });
+  }
+  return fixture(d);
+}
 if (process.argv[1]?.endsWith("fixtures.mjs")) {
   await mkdir("tests/fixtures", { recursive: true });
   for (const [name, data] of [
     ["synthetic", fixture()],
     ["paired", pairedFixture()],
     ["structural", structuralFixture()],
+    ["noisy", noisyFixture()],
   ])
     for (const [ext, b] of Object.entries(data))
       await writeFile(

@@ -27,8 +27,9 @@ try {
   );
   assert.match(await page.textContent("#metrics"), /44/);
   assert.match(await page.textContent("#events"), /duplication/);
-  assert.match(await page.textContent("#rowCount"), /4 families in view/);
+  assert.match(await page.textContent("#rowCount"), /4 group rows in view/);
   assert.equal(await page.locator("#collapse").isChecked(), true);
+  assert.equal(await page.inputValue("#detail"), "overview");
   assert.equal(await page.inputValue("#layer"), "all");
   await page.locator("#pileup").click({ position: { x: 40, y: 120 } });
   assert.equal(
@@ -47,6 +48,7 @@ try {
   assert.match(await page.textContent("#rowCount"), /of 4/);
   // A drag moves genomic content, while a click still expands its family.
   await page.click("#zoomIn");
+  await page.locator("#pileup").scrollIntoViewIfNeeded();
   const bounds = await page.locator("#pileup").boundingBox();
   const expandedBefore = await page
     .locator('#readTable tr[aria-expanded="true"]')
@@ -61,7 +63,7 @@ try {
   const rangeAfterLeft = await page
     .locator("#pileup")
     .getAttribute("data-view-start");
-  assert.notEqual(rangeBefore, rangeAfterLeft);
+  assert.notEqual(rangeBefore, rangeAfterLeft, errors.join("\n"));
   assert.equal(
     await page.locator('#readTable tr[aria-expanded="true"]').count(),
     expandedBefore,
@@ -154,7 +156,7 @@ try {
       .querySelector("#status")
       .textContent.includes("eligible fragments analyzed"),
   );
-  assert.match(await page.textContent("#rowCount"), /1 families in view/);
+  assert.match(await page.textContent("#rowCount"), /1 group rows in view/);
   assert.match(
     await page.textContent("#rowCount"),
     /12 total fragments \/ 24 records retained/,
@@ -212,6 +214,44 @@ try {
     await page.textContent("#structural"),
     /offline assembly catalog/,
   );
+  await page.click("#clear");
+  for (const [id, name] of [
+    ["bam", "noisy.bam"],
+    ["index", "noisy.bai"],
+    ["reference", "noisy.fa"],
+    ["fai", "noisy.fa.fai"],
+  ])
+    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
+  await page.check("#confirm");
+  await page.click("#open");
+  await page.waitForFunction(() =>
+    document.querySelector("#status").textContent.startsWith("Files open"),
+  );
+  await page.fill("#region", "synthetic:1001-1800");
+  await page.click("#run");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("eligible fragments analyzed"),
+  );
+  assert.match(await page.textContent("#rowCount"), /1 group rows in view/);
+  assert.match(
+    await page.textContent("#rowCount"),
+    /200 total fragments \/ 200 records retained/,
+  );
+  await page.selectOption("#detail", "families");
+  assert.match(await page.textContent("#rowCount"), /200 families in view/);
+  await page.selectOption("#detail", "overview");
+  assert.match(await page.textContent("#rowCount"), /1 group rows in view/);
+  await page.click("#expandAll");
+  assert.match(await page.textContent("#rowCount"), /of 201/);
+  await page.locator("#pileup").focus();
+  await page.keyboard.press("End");
+  await page.waitForFunction(() =>
+    document.querySelector("#readTable").textContent.includes("Read 200"),
+  );
+  await page.click("#collapseAll");
+  assert.match(await page.textContent("#rowCount"), /of 1/);
   assert.deepEqual(errors, []);
   assert.deepEqual(network, []);
   await page.reload();

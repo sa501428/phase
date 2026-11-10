@@ -302,6 +302,19 @@ export function phase(reads, reference, origin, opts, supplied = []) {
     ...v,
     index: i,
     support: counts.get(v.id)?.support || 0,
+    complexOverlap: variants.some(
+      (w) =>
+        w.id !== v.id &&
+        w.pos <= v.pos + Math.max(1, v.ref.length) - 1 &&
+        v.pos <= w.pos + Math.max(1, w.ref.length) - 1 &&
+        !(
+          w.pos === v.pos &&
+          w.ref === v.ref &&
+          v.ref.length === 1 &&
+          v.alt.length === 1 &&
+          w.alt.length === 1
+        ),
+    ),
     overlap: variants.some(
       (w) =>
         w.id !== v.id &&
@@ -325,7 +338,7 @@ export function phase(reads, reference, origin, opts, supplied = []) {
   for (const [key, count] of edges)
     if (count >= opts.support) {
       const [a, b] = key.split(",").map(Number);
-      if (!variants[a].overlap && !variants[b].overlap)
+      if (!variants[a].complexOverlap && !variants[b].complexOverlap)
         parent[root(b)] = root(a);
     }
   const components = new Map();

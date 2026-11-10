@@ -1,3 +1,4 @@
+import { buildOverview } from "./overview.js";
 import { structuralEvidence } from "./structural.js";
 import { completePairs } from "./mates.js";
 import { buildFamilies } from "./families.js";
@@ -24,6 +25,8 @@ self.onmessage = async ({ data: m }) => {
           const r = phase(d.reads, d.reference, d.region.start, m.opts);
           r.structural = structuralEvidence(r.reads, d.region, m.opts);
           r.families = buildFamilies(r, d.reference, d.region.start, m.opts);
+          r.settings = m.opts;
+          r.overview = buildOverview(r, d.region, m.opts);
           return r;
         })(),
         request: m.request,
@@ -171,6 +174,8 @@ self.onmessage = async ({ data: m }) => {
       const result = phase(reads, reference, region.start, opts, supplied);
       result.structural = structuralEvidence(result.reads, region, opts);
       result.families = buildFamilies(result, reference, region.start, opts);
+      result.settings = opts;
+      result.overview = buildOverview(result, region, opts);
       send("result", { result, reference, region, request: m.request });
     } else if (m.type === "event") {
       const path = eventPath(m.event, m.reference, m.origin);

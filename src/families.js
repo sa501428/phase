@@ -171,6 +171,7 @@ export function buildFamilies(result, reference, origin, opts) {
     if (!family) {
       family = {
         id: families.size,
+        observed,
         members: [],
         segments: [],
         mismatches: snps.map(([, v]) => v),
@@ -229,6 +230,25 @@ export function buildFamilies(result, reference, origin, opts) {
     };
   });
 }
+function compareGroupRows(a, b) {
+  if (a.family.kind === "overview" && b.family.kind === "overview") {
+    const rank = {
+      haplotype: 0,
+      coverage: 0,
+      ambiguous: 1,
+      uninformative: 2,
+      unresolved: 3,
+      excluded: 4,
+    };
+    return (
+      (a.family.blockID || 0) - (b.family.blockID || 0) ||
+      a.family.scope.start - b.family.scope.start ||
+      rank[a.family.category] - rank[b.family.category] ||
+      a.group.localeCompare(b.group)
+    );
+  }
+  return a.group.localeCompare(b.group) || a.start - b.start;
+}
 export function layoutFamilies(
   families,
   reads,
@@ -261,7 +281,7 @@ export function layoutFamilies(
     // Membership is never sampled; viewport rendering only determines painted rows.
     const group = f.groups.join(", "),
       base = { family: f, group, start: f.start, end: f.end };
-    if (collapsed && members.length > 1) {
+    if (collapsed && (members.length > 1 || f.kind === "overview")) {
       out.push({ ...base, type: "family", members, count: members.length });
       if (!expanded.has(f.id)) continue;
     }
@@ -285,7 +305,7 @@ export function layoutFamilies(
   return [...buckets.values()]
     .sort((a, b) =>
       sort === "group"
-        ? a[0].group.localeCompare(b[0].group) || a[0].start - b[0].start
+        ? compareGroupRows(a[0], b[0])
         : sort === "quality"
           ? Math.max(
               ...b[0].family.members.flatMap((m) =>
