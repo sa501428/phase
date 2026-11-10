@@ -1,57 +1,73 @@
-# Phase local clone viewer — assembly version
+# Phase local clone viewer — manual haplotype workspace
 
-Open **[index.html](index.html)** directly in desktop Chrome or Edge. It is a self-contained HTML file: no server, installation, uploads or runtime downloads. The previous viewer remains directly usable at **[archive/index.html](archive/index.html)**. Its frozen source snapshot and original documentation are under `archive/v1-2026-11-10/`.
+Open **[index.html](index.html)** directly in desktop Chrome or Edge. The viewer is a self-contained HTML file with no server, installation, uploads or runtime downloads.
 
-## Work on a selected locus
+The assembly-first version is preserved at **[archive2/index.html](archive2/index.html)**, with its source snapshot, documentation, literature notes and checksums in the same folder. The original viewer remains at **[archive/index.html](archive/index.html)**.
 
-1. Choose a coordinate-sorted short-read BAM and matching BAI or CSI. Optionally choose the matching reference as `.2bit`, or uncompressed FASTA with `.fai`.
-2. Open the BAM. Enter a contig and **1-based inclusive** start/end, or find a gene in the embedded hg19/hg38 catalog, choose a transcript and optionally one exon. An interval spanning a few exons also works; disconnected evidence stays in separate local blocks. The chosen catalog must match the BAM assembly.
-3. Assemble the selected region. The reference is optional for sequence assembly; BAM coordinates still define the local target. Off-target mate sequences do not seed another assembly.
-4. Explore the compact graph. Drag left/right/up/down to pan; wheel or buttons zoom. Select a sequence segment or local haplotype pattern to inspect its supporting sequence and fragments. The graph layout is topological, not a genomic coordinate axis.
-5. Expand paired read evidence when needed. Both ends share one row/axis. Scroll vertically through all fragments; drag a row horizontally to pan, or use Ctrl/Command+wheel to zoom. Rendering is virtualized; records are not downsampled. **Show all input records** also exposes filtered/malformed/missing-sequence records.
-6. Enter variants, one per line, and check linkage. Genomic SNVs such as `chr17:7674220G>A` work without reference with REF explicitly unverified. With reference, the existing resolver supports genomic HGVS, transcript `c.` entries, selected-transcript bare `c.` entries, substitutions, insertions, deletions, duplications and delins. Only the selected interval is evaluated.
-7. Clear session when done. All working case data is held in RAM. GFA export is explicit and contains assembled case sequence.
+## Load a specific locus
 
-## What the graph and counts mean
+1. Select a coordinate-sorted short-read **BAM**, its matching **BAI or CSI**, and the alignment reference as **2bit**, or uncompressed FASTA with FAI.
+2. Open the files. Enter an interval such as `chr17:7668421-7675244` using **1-based inclusive coordinates**, or find a gene in the embedded hg19/hg38 catalog and choose a transcript or individual exon. The catalog must match the BAM assembly.
+3. Load the region. Reads are queried through the index for that locus; named same-contig mates are retrieved through bounded indexed lookups. There is no BAM-wide assembly or reconstruction.
 
-Read sequences construct a strand-symmetric de Bruijn graph, compacted into unitigs. Low-support branches and cycles remain visible. Actual read traversals define bubble allele sequences, and physical paired fragments link allele features into local evidence blocks. A single weak bridge does not join blocks at the default support threshold.
+Each physical read pair starts as its own row. The two ends share a coordinate axis and are connected across the insert. Soft clips extend from their original anchors as lighter, unaligned sequence. SNPs use A/C/G/T colors; insertions are purple triangles; deletions and skipped regions are drawn separately. Hover reads for **MAPQ**, CIGAR, strand, flags, mate position and base information. Stored BAM sequence is already aligned in its reference orientation.
 
-There is **no fixed ploidy or requested number of haplotypes**. Suggestions are compatible local sequence patterns, not a measured number of cancer cell clones. A contradictory callable SNP vetoes grouping, including singleton SNPs outside the bubble list. Missing/low-quality bases are unknown. Partial evidence compatible with multiple patterns remains shared; weak patterns are inspectable separately. This is a conservative heuristic, not a globally optimal or statistically calibrated mixture model.
+Drag horizontally to pan, use arrow/zoom buttons, or Ctrl/Command+wheel to zoom. Ordinary wheel scrolling moves vertically through all rows. Panning stays within the loaded reference interval; load a different interval to change the workspace. An individual mate outside the loaded target remains available in its pair and metadata, although reference comparison is unavailable beyond the target. The initial view focuses on the first covered part of a larger target; **Fit target** shows the complete selected interval.
 
-Pattern share is exclusive assigned fragments divided by all informative fragments in the block, including shared and contradictory evidence. Bubble allele fraction uses noncontradictory fragments callable at that bubble. Both denominators are exposed; neither measures tumor-cell fraction. Duplicate flags, PCR/amplicon bias, copy number and unequal coverage affect them. UMI consensus is not implemented.
+## Construct haplotypes yourself
 
-Reference annotation maps existing graph sequence to the supplied interval; it never creates a reference-supported assembly path. Matching contig names/lengths do not verify sequence identity. Original CIGAR geometry determines read markers, including soft clips, insertions and deletions. Missing SEQ is displayed without fabricated bases; malformed records are quarantined without aborting the locus.
+- **Click** a row to toggle its whole pair. **Shift-click** another row to select the inclusive range in the current order, including rows reached by scrolling. Group-row selection selects its displayed members; expanded child rows select individual pairs.
+- Sort unassigned pairs by position, name, or the allele at a site selected by clicking the reference track. Sorting never changes assignments. **Select visible rows** is available for batches.
+- Enter an optional name and **Merge selected**. Original pairs are retained under one consensus row. Expand via the triangle or inspector to see every contributing pair. Selecting the whole haplotype plus additional compatible pairs extends it while keeping its name and identity; selecting a subset can create a separate group.
+- A single contradictory callable base, deletion, or insertion **blocks the merge**. There is no majority override. Missing coverage stays unknown. Soft clips remain unaligned evidence and do not vote as reference-aligned variants.
+- Select pairs and **Hide selected** to remove unhelpful rows. **Restore hidden**, **Show hidden rows**, and Undo keep hiding reversible. By default hidden pairs are excluded from consensus, coverage and VAF. Uncheck **Exclude hidden pairs from consensus / VAF** for display-only hiding.
+- **Ungroup selected** detaches selected pairs; **Dissolve haplotype** returns every member to individual rows. Naming, merging, hiding, restoring, ungrouping and imports support Undo/Redo. Ctrl/Command+Z works outside text fields; Shift+M merges and Shift+H hides.
 
-Requested-variant cis evidence means the alternate alleles occurred on the same physical fragment. Separate allele patterns are compatible with trans, but cannot establish trans for an unrestricted somatic mixture. The inspector's closest-pattern comparison describes shared/different observed bubble alleles; it does not infer ancestry.
+Nothing is automatically merged, clustered into assignments, or downsampled. You may construct any number of local haplotypes. Unassigned pairs stay independent. Changing consensus quality thresholds retains your assignments; any newly exposed conflicts are marked and consensus FASTA export stops until they are resolved.
 
-The structural panel reports local SA/supplementary and mate clues for possible translocations, inversion-like alignments, and other regional links. Repeat/duplication loops and deletion/insertion branches may also appear in the graph. These are evidence for review, not exhaustive structural variant calls or resolved remote breakpoints. No partner-region assembly is attempted.
+## Hierarchy and variant fractions
 
-## Synthetic examples and checks
+The compact hierarchy compares the groups **you construct**, using average linkage on differing jointly observed SNP calls. Missing observations never become reference matches. Groups without comparable SNP evidence remain in separate trees. The similarity-cut slider changes descriptive similarity clusters without changing your groups or read assignments. Click a leaf or group label to inspect its counts and variants. Hierarchy computation is bounded to 80 constructed groups; above that, assignments/read access remain intact and the limit is explicit.
 
-**Three patterns + deletion block** contains 52 paired fragments (104 records): three linked patterns of 12 fragments each and a separate two-allele deletion block of 8 fragments per allele.
+The inspector distinguishes:
 
-**Ten branched somatic haplotypes** contains ten sequence lineages with nested founder/private SNPs and unequal abundances of 36, 24, 18, 12, 6, 30, 21, 15, 9 and 3 paired fragments. Five founder-only partial observations stay shared among five compatible patterns. The expected result is ten supported local patterns, not a forced binary partition. The lineage tree is synthetic ground truth, never an assembly input or a claimed inferred tumor tree.
+- **Group pair share:** included assigned fragments divided by all included fragments in the loaded target. The denominator includes unassigned pairs and pairs from other covered blocks; it is a descriptive workspace fraction.
+- **Site VAF:** fragments carrying the displayed alternate allele divided by all included fragments callable at that position, across assigned and unassigned pairs. Overlapping mates count once; uncovered, filtered and internally contradictory calls do not become reference votes.
+- **Within-group ALT fraction:** alternate-carrying fragments divided by callable fragments within the selected group.
 
-`tests/fixtures/` contains only generated synthetic binary BAM/BAI/CSI, FASTA/FAI and 2bit data. Existing `synthetic`, `paired`, `record-compatibility`, `structural`, and new `somatic-ten` fixtures use `synthetic:1001-1800`. The latter includes all ten unequal lineages plus five shared founder-only fragments in a multi-block BAM. Unlike the old viewer, a deletion present in all reads may be a single graph path rather than an alternate bubble; optional reference and read CIGARs expose the difference.
+Every fraction exposes numerator and denominator. A variant shared by several groups can have a higher VAF than any one group's share. Neither group share nor site VAF measures cancer-cell fraction. Similarity does not establish tumor ancestry. Duplicate-flagged pairs remain available and, when manually selected, contribute as distinct query-name fragments; UMI family consensus is not implemented.
+
+## Save and resume
+
+**Export assignments** writes JSON containing group names, fragment identities, hidden-pair membership and evidence settings. Restore it after loading the same BAM, reference and interval. A SHA-256 digest of the loaded reference/read evidence prevents accidental application to a different workspace. Invalid, missing or multiply assigned members are rejected atomically. Export files contain read identities and should be treated as case data.
+
+**Export consensus FASTA** writes only observed, callable sequence blocks, with insertions incorporated and deletions removed. Gaps between covered blocks produce separate FASTA records; they are not filled from the reference or silently joined. FASTA is a partial local sequence hypothesis, not a full chromosome or cellular-clone genome. Conflicted groups cannot be exported as an arbitrary consensus.
+
+Loading a new interval begins a fresh workspace. Export assignments to retain manual work before switching targets. **Clear session** terminates the worker and clears case data, assignments, tooltips, selected coordinates and undo history. No browser storage is used.
+
+## Synthetic examples and validation
+
+The built-in simple example has 52 physical fragments / 104 alignments, SNPs, insertion/deletion alleles and legal soft clips on paired reads. Hover the first founder pair for MAPQ 42 and 58. The second example has ten nested/sibling somatic lineages of unequal abundance plus five shared founder-only fragments. Both begin **ungrouped**, so construction remains a human decision.
+
+`tests/fixtures/` contains generated binary BAM/BAI/CSI, 2bit and FASTA/FAI inputs. Load `synthetic:1001-1800` for the existing `synthetic`, `paired`, `record-compatibility`, `structural` and `somatic-ten` fixtures. No patient data is included or required.
 
 ```sh
 npm ci
 npm run build
 npm test
 npm run test:browser
+npm run test:browser:v2
 npm run test:browser:v1
 ```
 
-Browser checks use installed desktop Chrome via `playwright-core`; set `CHROME_PATH` if needed. They open the release through `file://`, use synthetic inputs, and verify that there are no network requests or CSP errors. Clinical BAM testing remains the user's responsibility; no private BAMs are included or required.
+Browser checks use installed desktop Chrome through `playwright-core`; set `CHROME_PATH` if needed. Checks exercise real Shift-click gestures, merging/hiding, conflicts, Undo/Redo, MAPQ/soft-clip hover, read/consensus SNP geometry, hierarchy, VAF denominators, scrolling/panning/zoom, assignments/FASTA, binary inputs, missing SEQ, exon lookup, reset and offline CSP behavior. Real BAM testing is performed by the user.
 
-## Bounds and implementation
+## Implementation and bounds
 
-Analysis is explicitly local: maximum 200 kb selected interval, 100,000 fetched records, two million stored read bases, 200,000 oriented k-mers and 400,000 oriented edges. The worker has a 90-second watchdog. Exceeding a limit fails with a request to narrow the target; it never silently downsamples. Named same-contig mates are retrieved through at most 512 indexed windows. Cross-contig/unmapped/unavailable mates remain metadata. Local I/O has its own bounded budgets.
+New source is in `v3/`; `scripts/build.mjs` generates the top-level release and CSP hashes. Existing JavaScript BAM/reference/CIGAR readers and SNP-distance/average-linkage helpers are reused. `v2/` retains the assembly source and `src/` retains shared modules plus the original viewer source. The historical assembly algorithm review is preserved in `archive2/LITERATURE_REVIEW.md`.
 
-Defaults are k=31, MAPQ ≥20, base quality ≥20, and support ≥3 distinct fragments. Secondary, QC-failed, duplicate-flagged (unless enabled), unavailable-sequence and malformed alignments do not vote. MAPQ 255 is excluded. Missing/255 base qualities are unknown and currently accepted, which is reported in settings. These exploration thresholds are not validated limits of detection. Weak graph paths are retained. Bubble searches are bounded to nearby reconvergence (512 visited nodes per branch, at most 128 resolved bubbles); complex structures remain unresolved and counted.
+Limits fail explicitly: 200 kb selected interval, 100,000 fetched records, two million stored read bases, bounded local I/O, at most 512 indexed mate windows, and a 90-second loading watchdog. There is no silent read downsampling. Read rendering is virtualized; every retained pair is reachable through scrolling. Off-contig or unmapped mates are metadata rather than fabricated aligned sequence.
 
-New source is in `v2/`; `scripts/build.mjs` generates the top-level `index.html` and its CSP hashes. Selected low-level BAM/reference/CIGAR/variant/structural modules are reused from `src/`. The earlier viewer's pileup controls, VCF/BED flows, event realignment and dendrogram remain in the frozen archive. V2 emphasizes assembly graph evidence with an inspector rather than bottom tables.
+Consensus defaults to MAPQ ≥20 and base quality ≥20. Secondary, QC-failed, missing/invalid-sequence and MAPQ-255 alignments do not vote. Missing/255 base quality is accepted as unknown. Missing SEQ is drawn without fake bases; inconsistent CIGAR/SEQ geometry is quarantined per record. Contig names/lengths are checked against the reference, but matching lengths do not establish sequence identity.
 
-The implementation is JavaScript, including the bounded BGZF inflater. `@gmod/bam` and `pako` are bundled; there are no WASM or runtime network dependencies. Embedded hg19/hg38 transcript provenance is in `references/manifest.json`. Third-party notices and build checksums are generated under `dist/`. Case files are ignored by `.gitignore`; only intentional synthetic fixture exceptions are tracked.
-
-See **[LITERATURE_REVIEW.md](LITERATURE_REVIEW.md)** for the relevant Lancet, SAVAGE, WhatsHap polyphase and Haploflow ideas, their implementation consequences, and the substantial parts of those algorithms that Phase does not implement or claim to reproduce.
+All dependencies and hg19/hg38 transcript annotations are embedded in the release. Runtime network requests are blocked by CSP. There are no WASM/runtime downloads. Third-party notices/build checksums are generated under `dist/`; annotation provenance is in `references/manifest.json`. Case inputs are ignored by `.gitignore`, with intentional exceptions for generated synthetic fixtures.

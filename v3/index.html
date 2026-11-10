@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!--CSP-->
+    <title>Phase · manual haplotype workspace</title>
+    <!--STYLE-->
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="mark">P</span>
+        <div>
+          <h1>Phase <span>local clone viewer</span></h1>
+          <p>Inspect the reads. Build the haplotypes.</p>
+        </div>
+      </div>
+      <nav>
+        <a href="archive2/index.html">Assembly viewer ↗</a
+        ><a href="archive/index.html">First viewer ↗</a>
+      </nav>
+      <span class="private">LOCAL · RAM ONLY</span
+      ><button id="reset">Clear session</button>
+    </header>
+    <main>
+      <aside class="controls">
+        <div class="eyebrow">LOCAL INPUT</div>
+        <h2>Open a locus</h2>
+        <label>BAM<input id="bam" type="file" accept=".bam" /></label
+        ><label
+          >BAI / CSI<input id="index" type="file" accept=".bai,.csi" /></label
+        ><label
+          >Reference (2bit or FASTA)<input
+            id="reference"
+            type="file"
+            accept=".2bit,.fa,.fasta,.fna"
+        /></label>
+        <details>
+          <summary>FASTA index</summary>
+          <label>FAI<input id="fai" type="file" accept=".fai" /></label>
+        </details>
+        <button id="open" class="primary">Open files</button>
+        <details class="demo">
+          <summary>Try synthetic reads</summary>
+          <select id="scenario" aria-label="Synthetic scenario">
+            <option value="simple">SNPs, indels & soft clips</option>
+            <option value="somatic">
+              Ten branched somatic lineages
+            </option></select
+          ><button id="demo">Load example</button>
+        </details>
+        <hr />
+        <div class="eyebrow">GENE OR COORDINATES</div>
+        <div class="inline">
+          <select id="build" aria-label="Gene catalog">
+            <option>hg38</option>
+            <option>hg19</option></select
+          ><input
+            id="gene"
+            placeholder="Gene, e.g. TP53"
+            aria-label="Gene symbol"
+          /><button id="find">Find</button>
+        </div>
+        <select id="genes" aria-label="Gene locus">
+          <option value="">Gene locus</option></select
+        ><select id="transcript" aria-label="Transcript">
+          <option value="">Transcript</option></select
+        ><select id="exon" aria-label="Exon">
+          <option value="">Whole transcript</option></select
+        ><label
+          >Region (1-based, inclusive)<input
+            id="region"
+            placeholder="chr17:7668421-7675244" /></label
+        ><button id="load" class="primary" disabled>
+          Load selected region
+        </button>
+        <p class="muted">
+          Match the catalog to your BAM assembly. A gene, one exon or a small
+          interval defines the workspace. Loading a region starts a new
+          workspace; export assignments to keep your edits.
+        </p>
+        <hr />
+        <div class="eyebrow">CONSENSUS EVIDENCE</div>
+        <div class="split">
+          <label
+            >Minimum MAPQ<input
+              id="mapq"
+              type="number"
+              min="0"
+              max="254"
+              value="20" /></label
+          ><label
+            >Minimum base Q<input
+              id="baseq"
+              type="number"
+              min="0"
+              max="93"
+              value="20"
+          /></label>
+        </div>
+        <label class="check"
+          ><input id="excludeHidden" type="checkbox" checked />Exclude hidden
+          pairs from consensus / VAF</label
+        ><button id="apply">Apply evidence settings</button>
+        <p class="muted">
+          Every record stays available. Quality thresholds affect consensus and
+          fractions; they do not remove read rows.
+        </p>
+        <hr />
+        <div class="eyebrow">KEEP YOUR WORK</div>
+        <div class="export-buttons">
+          <button id="save" disabled>Export assignments</button
+          ><button id="fasta" disabled>Export consensus FASTA</button>
+        </div>
+        <label
+          >Restore assignment JSON<input
+            id="import"
+            type="file"
+            accept=".json"
+            disabled
+        /></label>
+        <p class="muted">
+          Assignments include haplotype names, read identities, hidden pairs and
+          settings. Restore with the same BAM, reference and target interval.
+          FASTA exports observed sequence blocks; coverage gaps stay separate.
+        </p>
+        <details>
+          <summary>Selection & interpretation</summary>
+          <p>
+            Click a row to toggle its whole pair. Shift-click selects an
+            inclusive range in the current row order, even across scrolling.
+            Drag horizontally to pan; wheel scrolls rows; Ctrl/Command+wheel
+            zooms. Click the coordinate/reference track to select a site, then
+            sort pairs by that allele.
+          </p>
+          <p>
+            Merge creates your named haplotype. Contradictory callable
+            bases/deletions or insertions block a merge. Missing coverage is
+            unknown. Soft clips remain visible unaligned evidence and do not
+            vote as reference-aligned bases.
+          </p>
+          <p>
+            Use Hide for unhelpful pairs, Restore hidden or Undo to bring them
+            back. The checkbox above controls whether hidden pairs contribute to
+            consensus and VAF.
+          </p>
+          <p>
+            Hierarchy compares jointly observed SNPs in your constructed groups.
+            Similarity is not an inferred tumor ancestry. Group share counts
+            assigned pairs; site VAF counts alternate alleles among callable
+            fragments. Neither is a cancer-cell fraction.
+          </p>
+          <p>
+            Secondary/QC-failed/unavailable sequences and MAPQ 255 do not vote.
+            Missing base quality is accepted as unknown. PCR-duplicate flags
+            stay visible and your manually selected pairs remain counted; there
+            is no UMI consensus.
+          </p>
+          <p>
+            No upload, telemetry, browser storage or downsampling. Bounded local
+            reads only: 200 kb target, 100,000 fetched records, two million read
+            bases. Off-contig mates remain metadata. Clear session releases case
+            data.
+          </p>
+        </details>
+      </aside>
+      <section class="workspace">
+        <div id="status" role="status" aria-live="polite">
+          Open BAM, index and reference, then choose a gene or interval.
+        </div>
+        <div class="workspace-head">
+          <div>
+            <div class="eyebrow">REFERENCE-BASED REVIEW</div>
+            <h2 id="target">Manual haplotype workspace</h2>
+            <p id="counts" class="muted">
+              Pairs stay separate until you merge them.
+            </p>
+          </div>
+          <div class="history">
+            <button id="undo" disabled>Undo</button
+            ><button id="redo" disabled>Redo</button>
+          </div>
+        </div>
+        <div class="selection-toolbar">
+          <span id="selected">0 pairs selected</span
+          ><input
+            id="hapName"
+            maxlength="80"
+            placeholder="Haplotype name (optional)"
+            aria-label="Haplotype name"
+          /><button id="merge" class="primary" disabled>Merge selected</button
+          ><button id="hide" disabled>Hide selected</button
+          ><button id="ungroup" disabled>Ungroup selected</button
+          ><button id="clearSelection" disabled>Clear</button>
+        </div>
+        <div class="viewer-grid">
+          <section class="viewer">
+            <div class="navigation">
+              <button id="left" aria-label="Pan left">←</button
+              ><button id="right" aria-label="Pan right">→</button
+              ><button id="zoomOut" aria-label="Zoom out">−</button
+              ><button id="zoomIn" aria-label="Zoom in">+</button
+              ><button id="fit">Fit target</button
+              ><input
+                id="viewRange"
+                aria-label="Current view coordinates"
+                placeholder="View coordinates"
+              /><button id="go">Go</button>
+            </div>
+            <div class="legend">
+              <span class="a">A</span><span class="c">C</span
+              ><span class="g">G</span><span class="t">T</span
+              ><span class="ins">▲ insertion</span
+              ><span class="del">— deletion</span
+              ><span class="clip">Soft clips</span
+              ><span class="key"
+                >Shift-click: range · drag: pan · hover: MAPQ</span
+              >
+            </div>
+            <canvas
+              id="referenceTrack"
+              height="128"
+              aria-label="Coordinates, pair coverage, reference bases and selected transcript. Click to select a site."
+            ></canvas>
+            <div class="row-controls">
+              <label
+                >Sort pairs<select id="sort">
+                  <option value="position">Position</option>
+                  <option value="name">Name</option>
+                  <option value="allele">Selected-site allele</option>
+                </select></label
+              ><button id="selectVisible">Select visible rows</button
+              ><label class="check"
+                ><input id="showHidden" type="checkbox" />Show hidden
+                rows</label
+              ><button id="restore">Restore hidden</button
+              ><span id="siteLabel">No site selected</span>
+            </div>
+            <div
+              id="readScroll"
+              tabindex="0"
+              role="region"
+              aria-label="Paired reads and manually constructed haplotypes"
+            >
+              <div id="readSpace">
+                <canvas
+                  id="pileup"
+                  height="570"
+                  tabindex="0"
+                  aria-label="Paired read rows. Click to select; Shift-click for a range; drag to pan. Accessible row selection is below."
+                ></canvas>
+              </div>
+            </div>
+            <div class="viewer-footer">
+              <span id="rowCount">0 rows</span
+              ><span
+                >Paired ends share a row · gaps remain unknown · no automatic
+                merging</span
+              >
+            </div>
+            <details id="accessible">
+              <summary>Accessible row selection</summary>
+              <div id="accessibleRows"></div>
+            </details>
+          </section>
+          <aside class="analysis">
+            <section class="panel">
+              <div class="eyebrow">CONSTRUCTED GROUPS</div>
+              <h3>Haplotype similarity</h3>
+              <p id="treeSummary" class="muted">
+                Merge read pairs to build groups for comparison.
+              </p>
+              <label class="cut"
+                >Similarity cut
+                <input
+                  id="treeCut"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value="25"
+                /><span id="cutLabel">25% SNP difference</span></label
+              >
+              <div id="treeScroll">
+                <canvas
+                  id="tree"
+                  height="100"
+                  aria-label="SNP similarity hierarchy of manually constructed haplotypes"
+                ></canvas>
+              </div>
+              <div id="groupList"></div>
+            </section>
+            <section class="panel">
+              <div class="eyebrow">INSPECTED EVIDENCE</div>
+              <h3 id="inspectorTitle">Select a pair or haplotype</h3>
+              <div id="inspector">
+                <p class="muted">
+                  Hover a read for MAPQ, flags, CIGAR and base information.
+                  Constructed haplotypes show read-pair share and site VAFs
+                  here.
+                </p>
+              </div>
+            </section>
+            <section class="panel" id="sitePanel" hidden>
+              <div class="eyebrow">SELECTED SITE</div>
+              <h3 id="siteTitle"></h3>
+              <div id="siteStats"></div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+    <div id="tooltip" role="tooltip" hidden></div>
+    <!--SCRIPT-->
+  </body>
+</html>

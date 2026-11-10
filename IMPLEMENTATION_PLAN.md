@@ -1,13 +1,14 @@
-# Assembly-first Phase: implemented scope
+# Phase manual haplotype workspace
 
-The current entry point is `index.html`; the previous working viewer is frozen at `archive/index.html`, with its source and documentation snapshot under `archive/v1-2026-11-10/`.
+Implemented at top-level `index.html`. The assembly-first viewer and its frozen source are preserved at `archive2/index.html` / `archive2/source.tar.gz`; the original viewer remains at `archive/index.html`.
 
-- Indexed BAM/BAI/CSI input, explicitly selected gene/exon/interval; optional local 2bit or FASTA/FAI reference.
-- Sequence-built strand-symmetric de Bruijn graph, observed adjacency provenance, compact unitigs, folded reverse complements and GFA export.
-- Bounded read-observed bubble alleles, physical-fragment linkage, minimum-support block cuts, unrestricted local pattern count, strict contradictory-SNP guard, and explicit shared/weak evidence.
-- Main graph with pan/zoom, selectable local patterns, sequence differences and support/fraction inspector; paired read expansion with vertical virtualization and horizontal panning.
-- Manual genomic/HGVS variant linkage, local inversion/translocation/split/mate clues, offline transcript catalog and single-exon selection.
-- Synthetic regression coverage including ten unequal, nested/sibling somatic lineages, unknown/shared founder evidence, indels/repeats, weak links, missing SEQ and scope boundaries; no patient BAMs required.
-- Self-contained local release, RAM-only case state, CSP network blocking and explicit limits without downsampling.
+- Explicit gene/transcript/exon/coordinate target; indexed BAM/BAI/CSI plus local 2bit or FASTA/FAI reference.
+- IGV-style reference, coverage and paired alignment tracks; colored SNPs/indels, visible soft clips, MAPQ/CIGAR/strand hover, zoom, horizontal drag/pan and vertical row scrolling.
+- Whole-pair click selection and Shift-click ranges across scrolling; named manual merges, expandable original members, ungroup/dissolve, reversible hide/restore, rename and Undo/Redo.
+- Contradictory callable bases/deletions/insertions veto merges. Unknown gaps remain unknown; quality changes flag conflicts without rewriting assignments. No automatic grouping or read downsampling.
+- Average-linkage SNP similarity for constructed haplotypes, transparent group pair shares, site VAFs and within-group allele fractions. Hidden-evidence behavior is explicit and configurable.
+- Validated assignment JSON save/restore keyed to the loaded evidence; observed-block FASTA export with no reference-filled gaps and no arbitrary conflict consensus.
+- Synthetic model and browser regressions, including ten unequal nested/sibling somatic lineages, paired MAPQ/soft clips, strict conflicts, missing SEQ, hide/restore, history and local scope.
+- Self-contained file:// release, embedded offline annotation, RAM-only state, CSP network blocking and explicit resource limits.
 
-Algorithm rationale and limitations are documented in `LITERATURE_REVIEW.md`. Published methods inform the design; their complete inference engines and accuracy claims are not imported. In particular, this is an exploratory local compatible-pattern heuristic, not validated cellular clone-number inference, tumor phylogeny reconstruction, or a full remote structural-variant assembler.
+The workflow supports human construction of local sequence hypotheses. It does not claim a statistically inferred number of cancer-cell clones, cellular abundance, tumor ancestry or remote structural-event reconstruction.

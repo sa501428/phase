@@ -1,3 +1,5 @@
+> Historical assembly-version notes. The active viewer now uses manual read-pair assignments and an average-linkage SNP similarity display. The assembly implementation described below remains available at `archive2/index.html`; these are not claims about automatic inference in the manual workspace.
+
 # Local somatic assembly and phasing: algorithm notes
 
 Reviewed November 10, 2026. The target is an explicitly selected gene, exon, or small genomic interval in one indexed short-read BAM. It is an exploratory view of a somatic mixture with an unknown number of local sequence haplotypes and potentially unequal abundances. It is not whole-genome reconstruction or a diploid germline phaser.

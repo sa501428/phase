@@ -13,7 +13,7 @@ const plugins = [
   },
 ];
 const worker = await build({
-  entryPoints: ["v2/worker.js"],
+  entryPoints: ["v3/worker.js"],
   bundle: true,
   write: false,
   format: "iife",
@@ -23,7 +23,7 @@ const worker = await build({
   metafile: true,
 });
 const app = await build({
-  entryPoints: ["v2/app.js"],
+  entryPoints: ["v3/app.js"],
   bundle: true,
   write: false,
   format: "iife",
@@ -33,12 +33,12 @@ const app = await build({
   metafile: true,
 });
 const js = app.outputFiles[0].text,
-  css = await readFile("v2/styles.css", "utf8");
+  css = await readFile("v3/styles.css", "utf8");
 if (/WebAssembly\s*\.|\.wasm["']|instantiateStreaming/.test(js))
   throw Error("WASM in release bundle");
 const hash = (s) => createHash("sha256").update(s).digest("base64");
 const policy = `default-src 'none'; script-src 'sha256-${hash(js)}'; script-src-attr 'none'; style-src 'sha256-${hash(css)}'; style-src-attr 'none'; worker-src blob:; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'`;
-const html = (await readFile("v2/index.html", "utf8"))
+const html = (await readFile("v3/index.html", "utf8"))
   .replace(
     "<!--CSP-->",
     `<meta http-equiv="Content-Security-Policy" content="${policy}">`,

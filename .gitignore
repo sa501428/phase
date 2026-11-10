@@ -15,6 +15,7 @@ test-results/
 
 # Private case files must stay local
 /case-data/
+phase-manual-assignments*.json
 *.bam
 *.bai
 *.csi
