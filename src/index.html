@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--CSP-->
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Phase · Local haplotype explorer</title>
+    <!--STYLE-->
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <b>phase<span> / </span></b><span>LOCAL HAPLOTYPE EXPLORER</span>
+      </div>
+      <div class="privacy"><i></i> Offline · Session only</div>
+      <button id="clear">Clear session</button>
+    </header>
+    <main>
+      <aside>
+        <div class="eyebrow">WORKSPACE</div>
+        <h1>Follow the evidence.</h1>
+        <p class="muted">
+          Local reads. Local analysis. Explore which alleles travel together.
+        </p>
+        <section>
+          <h2>01 <span>Open local files</span></h2>
+          <label>BAM<input id="bam" type="file" accept=".bam" /></label
+          ><label
+            >Index · BAI or CSI<input
+              id="index"
+              type="file"
+              accept=".bai,.csi" /></label
+          ><label
+            >Reference · 2bit or FASTA<input
+              id="reference"
+              type="file"
+              accept=".2bit,.fa,.fasta,.fna" /></label
+          ><label
+            >FASTA index · if needed<input id="fai" type="file" accept=".fai"
+          /></label>
+          <details>
+            <summary>Additional evidence</summary>
+            <label
+              >Variants · plain VCF<input
+                id="vcf"
+                type="file"
+                accept=".vcf" /></label
+            ><label
+              >Target or primer intervals · BED<input
+                id="bed"
+                type="file"
+                accept=".bed" /></label
+            ><label
+              >Interval role<select id="bedRole">
+                <option value="target">Capture targets</option>
+                <option value="primer">Primer mask</option>
+              </select></label
+            >
+          </details>
+          <label class="check"
+            ><input id="confirm" type="checkbox" /> I selected the exact
+            reference used for alignment. Contig length alone cannot verify
+            assembly identity.</label
+          ><button id="open" class="primary">Open workspace</button>
+        </section>
+        <section>
+          <h2>02 <span>Choose a region</span></h2>
+          <label
+            >Assembly catalog<select id="assembly">
+              <option>hg19</option>
+              <option>hg38</option>
+            </select></label
+          ><label
+            >Gene symbol<input
+              id="gene"
+              placeholder="e.g. TP53"
+              autocomplete="off" /></label
+          ><button id="lookup">Find gene</button
+          ><label
+            >Locus<select id="locus">
+              <option value="">Select a gene locus</option>
+            </select></label
+          ><label
+            >Transcript<select id="transcript">
+              <option value="">Whole gene</option>
+            </select></label
+          ><label
+            >Genomic interval · 1-based inclusive<input
+              id="region"
+              placeholder="chr17:7,571,720-7,590,868"
+              spellcheck="false" /></label
+          ><label
+            >Sample<select id="sample">
+              <option value="">Single sample / unlabelled</option>
+            </select></label
+          ><button id="run" class="primary" disabled>Analyze region</button>
+        </section>
+        <details>
+          <summary>Evidence filters</summary>
+          <div class="filtergrid">
+            <label
+              >Min MAPQ<input
+                id="mapq"
+                type="number"
+                min="0"
+                max="254"
+                value="20" /></label
+            ><label
+              >Min base Q<input
+                id="baseq"
+                type="number"
+                min="0"
+                max="93"
+                value="20" /></label
+            ><label
+              >Min fragment support<input
+                id="support"
+                type="number"
+                min="2"
+                max="1000"
+                value="3"
+            /></label>
+          </div>
+          <label class="check"
+            ><input id="duplicates" type="checkbox" /> Include duplicate-marked
+            reads (amplicon assays)</label
+          >
+          <p class="muted">
+            Counts represent fragments, not validated unique molecules. Filters
+            apply when analysis runs.
+          </p>
+        </details>
+        <button id="demo">Explore synthetic example</button>
+        <p class="footnote">
+          No uploads, telemetry, saved sessions, or exports. Case data stays in
+          application memory. Your browser and operating system control swap,
+          extensions, and crash recovery.
+        </p>
+      </aside>
+      <article>
+        <div class="toolbar">
+          <div>
+            <div class="eyebrow">EVIDENCE VIEW</div>
+            <h2 id="regionTitle">Your local window into phase</h2>
+          </div>
+          <button id="cancel" disabled>Cancel analysis</button>
+        </div>
+        <div id="status" role="status" aria-live="polite">
+          Open a workspace or explore the synthetic example to begin.
+        </div>
+        <div id="empty">
+          <div class="helix">≋</div>
+          <h2>Every connection needs a fragment.</h2>
+          <p>
+            Inspect multiple local haplotypes, see where linkage ends,<br />and
+            resolve complex sequence against the reference.
+          </p>
+          <button id="demo2" class="primary">
+            Explore synthetic example →
+          </button>
+          <div class="badges">
+            <span>SNVs & indels</span><span>Paired fragments</span
+            ><span>Expanded event view</span>
+          </div>
+        </div>
+        <div id="workspace" hidden>
+          <div id="metrics" class="metrics"></div>
+          <div class="viewtools">
+            <label
+              >Track layout<select id="sort">
+                <option value="group">Group by local pattern</option>
+                <option value="start">Genomic start</option>
+                <option value="strand">Strand</option>
+                <option value="quality">Mapping quality</option>
+              </select></label
+            ><label
+              >Read layer<select id="layer">
+                <option value="eligible">Eligible reads</option>
+                <option value="all">All records, including excluded</option>
+                <option value="excluded">Excluded only</option>
+              </select></label
+            ><label class="check"
+              ><input id="clips" type="checkbox" /> Show clipped sequence</label
+            ><button id="zoomIn">Zoom +</button
+            ><button id="zoomOut">Zoom −</button><button id="left">←</button
+            ><button id="right">→</button><button id="fit">Fit</button>
+          </div>
+          <div class="legend">
+            <span class="a">A</span><span class="c">C</span
+            ><span class="g">G</span><span class="t">T</span
+            ><span>Gray = reference match</span><span>Purple = insertion</span
+            ><span>Line = deletion</span><span>Outline = excluded</span>
+          </div>
+          <div id="canvasWrap">
+            <canvas
+              id="pileup"
+              tabindex="0"
+              aria-label="Read pileup. Arrow keys pan; plus and minus zoom. Use the read table for accessible details."
+            ></canvas>
+          </div>
+          <div class="rowpage">
+            <button id="prevRows">Previous reads</button
+            ><span id="rowCount"></span
+            ><button id="nextRows">Next reads</button>
+          </div>
+          <div class="panels">
+            <section>
+              <h2>Local phase blocks</h2>
+              <p class="muted">
+                Groups are observed local allele patterns. They are not a tumor
+                clone count. Missing alleles remain unknown.
+              </p>
+              <div id="blocks"></div>
+            </section>
+            <section>
+              <h2>Variant linkage</h2>
+              <div class="pair">
+                <select id="v1" aria-label="First variant"></select
+                ><select id="v2" aria-label="Second variant"></select>
+              </div>
+              <div id="pairCounts"></div>
+              <div class="tablewrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Position</th>
+                      <th>Reference → alternate</th>
+                      <th>Support</th>
+                      <th>Evidence</th>
+                    </tr>
+                  </thead>
+                  <tbody id="variants"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+          <section>
+            <h2>Structural events and local alignment</h2>
+            <p class="muted">
+              Select an event for expanded reference and candidate sequence. A
+              duplication label is a junction hypothesis, not a copy-number
+              estimate.
+            </p>
+            <div id="events"></div>
+            <div id="expanded" hidden>
+              <h3 id="eventTitle"></h3>
+              <pre id="alignment"></pre>
+              <div id="eventDetails"></div>
+              <details>
+                <summary>
+                  Read to candidate realignments · bounded to 200 records
+                </summary>
+                <pre id="realigned"></pre>
+              </details>
+            </div>
+          </section>
+          <details>
+            <summary>Read inspection and original alignment</summary>
+            <div class="tablewrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Read</th>
+                    <th>Start</th>
+                    <th>CIGAR</th>
+                    <th>MAPQ</th>
+                    <th>Flags</th>
+                    <th>Groups</th>
+                  </tr>
+                </thead>
+                <tbody id="readTable"></tbody>
+              </table>
+            </div>
+            <pre id="readDetail"></pre>
+          </details>
+        </div>
+      </article>
+    </main>
+    <footer>
+      PHASE / All analysis on this device
+      <span>Evidence first. Uncertainty visible.</span>
+    </footer>
+    <!--SCRIPT-->
+  </body>
+</html>

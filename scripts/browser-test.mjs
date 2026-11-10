@@ -1,0 +1,92 @@
+import { chromium } from "playwright-core";
+import { resolve } from "node:path";
+import assert from "node:assert/strict";
+const browser = await chromium.launch({
+  executablePath:
+    process.env.CHROME_PATH ||
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  headless: true,
+  args: ["--disable-background-networking"],
+});
+try {
+  const page = await browser.newPage();
+  const errors = [],
+    network = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("request", (r) => {
+    if (/^https?:/.test(r.url())) network.push(r.url());
+  });
+  await page.goto("file://" + resolve("index.html"));
+  await page.click("#demo2");
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("#status")
+        .textContent.includes("eligible fragments analyzed"),
+    { timeout: 20000 },
+  );
+  assert.match(await page.textContent("#metrics"), /44/);
+  assert.match(await page.textContent("#events"), /duplication/);
+  await page.locator("#events button").first().click();
+  await page.waitForFunction(() =>
+    document.querySelector("#alignment").textContent.includes("Candidate"),
+  );
+  await page.screenshot({ path: "/tmp/phase-synthetic.png", fullPage: true });
+  await page.click("#clear");
+  assert.equal(await page.locator("#workspace").isVisible(), false);
+  for (const [id, name] of [
+    ["bam", "synthetic.bam"],
+    ["index", "synthetic.bai"],
+    ["reference", "synthetic.fa"],
+    ["fai", "synthetic.fa.fai"],
+  ])
+    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
+  await page.check("#confirm");
+  await page.click("#open");
+  await page.waitForFunction(() =>
+    document.querySelector("#status").textContent.startsWith("Files open"),
+  );
+  await page.fill("#region", "synthetic:1001-1800");
+  await page.click("#run");
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("#status")
+        .textContent.includes("eligible fragments analyzed"),
+    { timeout: 20000 },
+  );
+  assert.match(await page.textContent("#metrics"), /44/);
+  assert.match(await page.textContent("#events"), /duplication/);
+  await page.click("#clear");
+  for (const [id, name] of [
+    ["bam", "synthetic.bam"],
+    ["index", "synthetic.csi"],
+    ["reference", "synthetic.2bit"],
+  ])
+    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
+  await page.check("#confirm");
+  await page.click("#open");
+  await page.waitForFunction(() =>
+    document.querySelector("#status").textContent.startsWith("Files open"),
+  );
+  await page.fill("#region", "synthetic:1001-1800");
+  await page.click("#run");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("eligible fragments analyzed"),
+  );
+  assert.match(await page.textContent("#metrics"), /44/);
+  await page.fill("#gene", "TP53");
+  await page.click("#lookup");
+  assert.match(await page.inputValue("#region"), /^chr17:/);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(network, []);
+  await page.reload();
+  assert.equal(await page.locator("#workspace").isVisible(), false);
+  console.log(
+    "Standalone Chrome: synthetic demo, BAM/BAI+FASTA and BAM/CSI+two-bit queries, gene lookup, event alignment, reset/reload, no page errors or outbound requests passed",
+  );
+} finally {
+  await browser.close();
+}

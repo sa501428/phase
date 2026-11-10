@@ -1,0 +1,39 @@
+# Dependencies and generated build metadata
+node_modules/
+/dist/
+coverage/
+playwright-report/
+test-results/
+
+# Local configuration and development files
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+
+# Private case files must stay local
+/case-data/
+*.bam
+*.bai
+*.csi
+*.cram
+*.crai
+*.2bit
+*.fasta
+*.fa
+*.fna
+*.fai
+*.gzi
+*.vcf
+*.vcf.gz
+*.bcf
+*.tbi
+*.bed
+*.bed.gz
+
+# Keep the generated synthetic fixtures available for tests
+!tests/fixtures/**
+
+# index.html is the intentionally tracked standalone entry point.
