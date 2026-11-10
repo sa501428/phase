@@ -3,12 +3,32 @@
     "source": "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/ncbiRefSeq.txt.gz",
     "retrieved": "2026-11-10",
     "sha256": "25d7be987073d8ecadb042da87837bfc469e432ec044353a5f28c8e9fa893238",
-    "description": "NCBI RefSeq gene coordinates via UCSC; primary chromosome loci; transcript coordinates retained. NCBI public domain data; UCSC terms https://genome.ucsc.edu/license/"
+    "description": "NCBI RefSeq gene coordinates via UCSC; primary chromosome loci; transcript coordinates retained. NCBI public domain data; UCSC terms https://genome.ucsc.edu/license/",
+    "embedded_transcript_fields": [
+      "accession",
+      "txStart",
+      "txEnd",
+      "exons",
+      "cdsStart",
+      "cdsEnd",
+      "cdsStartStat",
+      "cdsEndStat"
+    ]
   },
   "hg38": {
     "source": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/ncbiRefSeq.txt.gz",
     "retrieved": "2026-11-10",
     "sha256": "7d87cce75dbc8276f7f8f199d6851e831a2d7060895145cfcef3ca333eb1e611",
-    "description": "NCBI RefSeq gene coordinates via UCSC; primary chromosome loci; transcript coordinates retained. NCBI public domain data; UCSC terms https://genome.ucsc.edu/license/"
+    "description": "NCBI RefSeq gene coordinates via UCSC; primary chromosome loci; transcript coordinates retained. NCBI public domain data; UCSC terms https://genome.ucsc.edu/license/",
+    "embedded_transcript_fields": [
+      "accession",
+      "txStart",
+      "txEnd",
+      "exons",
+      "cdsStart",
+      "cdsEnd",
+      "cdsStartStat",
+      "cdsEndStat"
+    ]
   }
 }

@@ -4,6 +4,7 @@ import { consensusGeometry } from "./consensus.js";
 import hg19 from "../references/hg19.js";
 import hg38 from "../references/hg38.js";
 import { ungzip } from "pako";
+let variantInputDirty = false;
 let catalog;
 let catalogBuild;
 function genes() {
@@ -110,6 +111,8 @@ function options() {
 }
 function busy(on) {
   $("cancel").disabled = !on;
+  for (const id of ["checkVariants", "variantText", "diploidPhase"])
+    $(id).disabled = on;
   $("run").disabled = on || !opened;
   $("open").disabled = on;
   $("demo").disabled = on;
@@ -162,6 +165,7 @@ function startWorker() {
       busy(false);
       expandedFamilies.clear();
       data = m;
+      variantInputDirty = false;
       view = { start: m.region.start, end: m.region.end };
       rows = 0;
       invalidateLayout();
@@ -197,6 +201,7 @@ function stop() {
 }
 function clear() {
   hierarchyView.clear();
+  variantInputDirty = false;
   finishDrag(true);
   suppressFamilyClick = false;
   worker?.terminate();
@@ -231,9 +236,11 @@ function clear() {
     "bed",
     "gene",
     "region",
+    "variantText",
   ])
     $(id).value = "";
   $("confirm").checked = false;
+  $("diploidPhase").checked = false;
   $("detail").value = "overview";
   $("collapse").checked = true;
   for (const id of ["locus", "transcript", "sample", "v1", "v2"])
@@ -243,6 +250,9 @@ function clear() {
     "variants",
     "events",
     "structural",
+    "requestedVariants",
+    "requestedMatrix",
+    "requestedEvidence",
     "readTable",
     "readDetail",
     "alignment",
@@ -321,6 +331,64 @@ function region() {
   }
   return { chr, start: +m[2] - 1, end: +m[3] };
 }
+function invalidateRequested() {
+  if (!data) return;
+  variantInputDirty = true;
+  $("requestedVariants").textContent =
+    "Entries or assumptions changed — check variants to update results.";
+  $("requestedMatrix").replaceChildren();
+  $("requestedEvidence").textContent = "";
+  draw();
+}
+$("variantText").oninput = invalidateRequested;
+$("diploidPhase").onchange = invalidateRequested;
+function variantContext() {
+  const text = $("variantText").value,
+    usesCoding = /(?:^|:)c\./im.test(text);
+  let selected;
+  const locus = loci[$("locus").value],
+    tx =
+      locus && $("transcript").value !== ""
+        ? locus[6][+$("transcript").value]
+        : null;
+  if (tx) selected = { chr: locus[1], strand: locus[2], transcript: tx };
+  return {
+    variantText: text,
+    diploid: $("diploidPhase").checked,
+    catalog: usesCoding
+      ? genes().filter((g) =>
+          text.split(/\r?\n/).some((line) => {
+            const id = line.trim().match(/^([^:]+):c\./i)?.[1];
+            return (
+              id &&
+              (g[0].toUpperCase() === id.toUpperCase() ||
+                g[6].some(
+                  (t) =>
+                    t[0] === id ||
+                    (!id.includes(".") && t[0].split(".")[0] === id),
+                ))
+            );
+          }),
+        )
+      : [],
+    selectedTranscript: selected,
+  };
+}
+$("checkVariants").onclick = () => {
+  try {
+    if (!worker || !data)
+      throw Error("Analyze a region or open the synthetic example first");
+    busy(true);
+    worker.postMessage({
+      type: "checkVariants",
+      ...variantContext(),
+      request: ++job,
+    });
+  } catch (e) {
+    busy(false);
+    status(e.message, true);
+  }
+};
 $("run").onclick = async () => {
   try {
     if (!worker || !opened) throw Error("Open files first");
@@ -349,6 +417,7 @@ $("run").onclick = async () => {
     job++;
     worker.postMessage({
       type: "analyze",
+      ...variantContext(),
       region: r,
       opts,
       request: job,
@@ -535,6 +604,7 @@ function render() {
     );
   renderStructural(r.structural);
   hierarchyView.render();
+  renderRequested();
   draw();
 }
 function renderStructural(structural) {
@@ -595,6 +665,78 @@ function renderStructural(structural) {
     card.append(button, description);
     panel.append(card);
   }
+}
+function renderRequested() {
+  if (variantInputDirty) return;
+  const r = data.result,
+    entries = r.requested || [];
+  $("requestedVariants").replaceChildren();
+  $("requestedMatrix").replaceChildren();
+  $("requestedEvidence").textContent = "";
+  for (const e of entries) {
+    if (e.error) {
+      $("requestedVariants").append(
+        el("p", `V${e.line} · ${e.input}: ${e.error}`, "requested-error"),
+      );
+      continue;
+    }
+    const button = el(
+      "button",
+      `V${e.line} · ${e.input} → ${e.chr}:${e.pos + 1}${e.ref || "∅"}>${e.alt || "∅"}${e.transcript ? " · " + e.transcript : ""}`,
+    );
+    button.onclick = () => {
+      view = {
+        start: Math.max(data.region.start, e.pos - 50),
+        end: Math.min(data.region.end, e.pos + Math.max(1, e.ref.length) + 50),
+      };
+      invalidateLayout();
+      draw();
+    };
+    $("requestedVariants").append(button);
+  }
+  const valid = entries.filter((e) => e.variant);
+  if (valid.length < 2) return;
+  const table = el("table"),
+    head = el("tr");
+  head.append(el("th", "Pair"));
+  for (const e of valid) head.append(el("th", "V" + e.line));
+  table.append(head);
+  for (const a of valid) {
+    const tr = el("tr");
+    tr.append(el("th", "V" + a.line));
+    for (const b of valid) {
+      const td = el("td");
+      if (a === b) td.textContent = "—";
+      else {
+        const p = r.requestedPairs.find(
+          (p) =>
+            p.a === Math.min(a.line, b.line) &&
+            p.b === Math.max(a.line, b.line),
+        );
+        if (p) {
+          const label = p.status.startsWith("Trans")
+            ? "Trans*"
+            : p.status.startsWith("Cis")
+              ? "Cis"
+              : p.status.startsWith("Possible")
+                ? "Cis?"
+                : p.status.startsWith("Separate")
+                  ? "Separate"
+                  : p.status;
+          const button = el("button", label);
+          const description = `V${p.a} / V${p.b}: ${p.status}. Both ALT: ${p.both}; V${p.a} ALT only: ${p.leftOnly}; V${p.b} ALT only: ${p.rightOnly}; both REF: ${p.neither}; other alleles: ${p.other}; unknown: ${p.unknown}. ${p.informative} jointly informative fragments. Absence of both-ALT evidence alone cannot establish trans in a mixed sample.`;
+          button.title = description;
+          button.onclick = () => {
+            $("requestedEvidence").textContent = description;
+          };
+          td.append(button);
+        }
+      }
+      tr.append(td);
+    }
+    table.append(tr);
+  }
+  $("requestedMatrix").append(table);
 }
 function pair() {
   if (!data) return;
@@ -708,6 +850,21 @@ function draw() {
   for (const [s, e] of bed) {
     c.fillStyle = "#e3b56855";
     c.fillRect(x(s), 40, (e - s) * scale, 45);
+  }
+  for (const v of variantInputDirty ? [] : data.result.requested || []) {
+    if (!v.variant) continue;
+    const pos = v.pos;
+    if (pos >= view.end || pos + Math.max(1, v.ref.length) <= view.start)
+      continue;
+    c.fillStyle = "#f0bd4540";
+    c.fillRect(
+      x(pos),
+      18,
+      Math.max(2, Math.max(1, v.ref.length) * scale),
+      height - 18,
+    );
+    c.fillStyle = "#94660b";
+    c.fillText("V" + v.line, x(pos), 48);
   }
   for (const b of data.result.blocks) {
     c.strokeStyle = "#47745f";
@@ -836,6 +993,17 @@ function draw() {
     c.restore();
   });
   c.restore();
+  for (const v of variantInputDirty ? [] : data.result.requested || []) {
+    if (!v.variant || v.pos < view.start || v.pos >= view.end) continue;
+    c.save();
+    c.strokeStyle = "#bc8c32";
+    c.setLineDash([2, 4]);
+    c.beginPath();
+    c.moveTo(x(v.pos), 50);
+    c.lineTo(x(v.pos), height);
+    c.stroke();
+    c.restore();
+  }
   const families = new Set(all.map((row) => row.family.id));
   const fragmentCount = data.result.families.reduce((n, f) => n + f.count, 0);
   $("rowCount").textContent =

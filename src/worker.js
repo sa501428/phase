@@ -1,3 +1,4 @@
+import { resolveVariantLines, requestedPairs } from "./variant-input.js";
 import { buildHierarchy } from "./hierarchy.js";
 import { buildOverview } from "./overview.js";
 import { structuralEvidence } from "./structural.js";
@@ -14,16 +15,34 @@ import {
   eventPath,
   align,
 } from "./analysis.js";
-let bam, ref, dict, budget, files, header;
+let bam, ref, dict, budget, files, header, lastContext;
 const send = (type, data) => postMessage({ type, ...data });
 self.onmessage = async ({ data: m }) => {
   try {
     if (m.type === "demo") {
       const d = synthetic();
+      lastContext = { demo: true, opts: m.opts };
       send("result", {
         ...d,
         result: (() => {
-          const r = phase(d.reads, d.reference, d.region.start, m.opts);
+          const requested = resolveVariantLines(m.variantText || "", {
+            catalog: m.catalog || [],
+            selected: m.selectedTranscript,
+            region: d.region,
+            reference: d.reference,
+          });
+          const r = phase(
+            d.reads,
+            d.reference,
+            d.region.start,
+            m.opts,
+            requested.filter((e) => e.variant).map((e) => e.variant),
+          );
+          r.requested = requested;
+          r.requestedPairs = requestedPairs(requested, r, {
+            support: m.opts.support,
+            diploid: m.diploid,
+          });
           r.structural = structuralEvidence(r.reads, d.region, m.opts);
           r.families = buildFamilies(r, d.reference, d.region.start, m.opts);
           r.settings = m.opts;
@@ -67,10 +86,20 @@ self.onmessage = async ({ data: m }) => {
         ),
       ];
       send("opened", { contigs: dict, samples });
+    } else if (m.type === "checkVariants") {
+      if (!lastContext) throw Error("Analyze a region first");
+      await self.onmessage({
+        data: {
+          ...lastContext,
+          ...m,
+          type: lastContext.demo ? "demo" : "analyze",
+        },
+      });
     } else if (m.type === "analyze") {
       budget.bytes = 0;
       ref.reset();
       const { region, opts } = m;
+      lastContext = { region, opts };
       if (
         !Number.isSafeInteger(region.start) ||
         !Number.isSafeInteger(region.end) ||
@@ -173,7 +202,21 @@ self.onmessage = async ({ data: m }) => {
           }
         }
       }
+      const requested = resolveVariantLines(m.variantText || "", {
+        catalog: m.catalog || [],
+        selected: m.selectedTranscript,
+        region,
+        reference,
+      });
+      supplied.push(
+        ...requested.filter((e) => e.variant).map((e) => e.variant),
+      );
       const result = phase(reads, reference, region.start, opts, supplied);
+      result.requested = requested;
+      result.requestedPairs = requestedPairs(requested, result, {
+        support: opts.support,
+        diploid: m.diploid,
+      });
       result.structural = structuralEvidence(result.reads, region, opts);
       result.families = buildFamilies(result, reference, region.start, opts);
       result.settings = opts;

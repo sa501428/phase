@@ -29,6 +29,24 @@ Group rows are local to a phase block; overlapping complex-allele blocks keep ov
 
 Click a summary row or its accessible table entry to expand all member pairs. Global expand/collapse controls are also available. The **Exact-pattern families** inspection mode retains the previous stricter grouping. Duplicate-marked fragments are retained in display counts and can join a compatible group, while the analysis duplicate filter remains independent. Use the scrollbar, mouse wheel, or Up/Down/Page Up/Page Down/Home/End keys to reach every row. Only the viewport is painted; no reads are downsampled. Gray reference-matching bases, colored mismatches, purple insertions, deletion strokes, and neutral clips remain distinct.
 
+## Variants of interest
+
+Open **Variants of interest** above the pileup and enter one variant per line, then select **Check and highlight variants**. The same list is applied when analyzing a region. The check reruns local analysis, retains requested alleles even below automatic discovery support, highlights their original positions with V1/V2 guides, and shows a compact clickable pair matrix with exact fragment counts. Click a resolved entry to center the view. Invalid lines have separate errors and do not discard other valid entries. Up to 32 entries are supported, and all must lie in the analyzed interval to be evaluated.
+
+Supported examples:
+
+```text
+chr17:7579472G>C
+chr17:g.7579472G>C
+chr17 7579472 G C
+NM_000546.6:c.215C>G
+c.215C>G
+```
+
+Genomic substitutions use one-based positions. HGVS DNA substitutions, deletions, literal-sequence insertions, tandem duplications, and delins are supported, including coding UTR and intronic positions. Bare `c.` entries require a selected transcript; gene-qualified entries require an unambiguous transcript or an explicit selection. Versioned transcript accessions are checked against the selected assembly's embedded RefSeq catalog. CDS bounds, exon order, negative-strand alleles, and intronic anchor boundaries are accounted for. Reference alleles are validated against the local genome. RefSeq-to-genome sequence differences, unknown reference accessions, uncertain positions, protein-only descriptions, and non-literal complex insertions are not silently inferred. Ranges crossing splice junctions also require an explicit genomic DNA event. For these, use an explicit genomic allele. This is a bounded local notation resolver, not a general HGVS validation service.
+
+**Cis supported** means alternate alleles are directly observed together on at least the configured minimum supporting fragments. **Possible cis** has direct support below that threshold. **Mixed patterns** contains joint alternates and additional separate patterns. **Unphased** means the current evidence cannot establish the relationship. Separate alternate patterns do not establish trans in a mixed tumor; an optional explicit diploid assumption permits a qualified **Trans supported** label when both reciprocal single-alternate patterns meet support and no joint-alternate observation exists. That label is conditional on the assumption and finite sampled evidence. The matrix provides both-ALT, left-only, right-only, both-REF, other-allele, unknown and jointly informative fragment counts. Paired ends count once; there is no imputation across coverage gaps.
+
 ## Exploratory group hierarchy and fractions
 
 A compact dendrogram sits alongside the pileup on wide screens and above it on smaller screens. Block chips show each region's supported group count; select a block to compare its groups. The similarity cut slider displays an exploratory count of similarity clusters without changing phasing, display-family membership, or read counts. Hover/focus a tree group or hover a pileup group for counts, pairwise SNP comparisons, and observed site allele fractions. Click a tree leaf to locate its pileup group. Detailed phase/variant panels are collapsed by default.

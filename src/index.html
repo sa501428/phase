@@ -205,6 +205,33 @@
             fragment. Click a row to inspect its pairs. Groups are local to each
             phase block; a fragment can appear in more than one block.
           </p>
+          <details id="variantEntry">
+            <summary>Variants of interest · enter one per line</summary>
+            <label
+              >Genomic or HGVS DNA variants<textarea
+                id="variantText"
+                autocomplete="off"
+                rows="5"
+                spellcheck="false"
+                placeholder="chr17:7577121G>A&#10;NM_000546.6:c.215C>G&#10;c.215C>G"
+              ></textarea>
+            </label>
+            <p class="muted">
+              Also accepts CHR POS REF ALT, chr:g.123A>T, del, ins, dup and
+              delins. Bare c. uses the selected transcript. Coding entries are
+              mapped with the selected assembly's offline RefSeq catalog and
+              checked against your reference. Choose a region covering all
+              variants.
+            </p>
+            <label class="check"
+              ><input id="diploidPhase" type="checkbox" /> Interpret separate
+              patterns under a diploid two-haplotype assumption</label
+            >
+            <button id="checkVariants">Check and highlight variants</button>
+            <div id="requestedVariants" role="status"></div>
+            <div id="requestedMatrix" class="tablewrap"></div>
+            <p id="requestedEvidence" aria-live="polite"></p>
+          </details>
           <div class="legend">
             <span class="a">A</span><span class="c">C</span
             ><span class="g">G</span><span class="t">T</span

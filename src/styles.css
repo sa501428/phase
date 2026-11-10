@@ -534,3 +534,30 @@ footer span {
   max-height: 180px;
   overflow: auto;
 }
+
+textarea {
+  width: 100%;
+  display: block;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #cedbd4;
+  border-radius: 5px;
+  font:
+    12px/1.6 ui-monospace,
+    monospace;
+  color: #264e44;
+  background: #fff;
+  resize: vertical;
+}
+#requestedVariants button {
+  margin: 4px;
+  font-size: 11px;
+}
+.requested-error {
+  color: #973e2a;
+  font-size: 12px;
+}
+#requestedMatrix button {
+  padding: 5px;
+  font-size: 10px;
+}

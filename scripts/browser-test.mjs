@@ -183,6 +183,27 @@ try {
     document.querySelector("#alignment").textContent.includes("Candidate"),
   );
   await page.screenshot({ path: "/tmp/phase-synthetic.png", fullPage: true });
+  await page.locator("#variantEntry > summary").click();
+  await page.fill(
+    "#variantText",
+    "synthetic:1121C>A\nsynthetic:g.1161G>C\nc.1A>T",
+  );
+  await page.click("#checkVariants");
+  await page.waitForFunction(() =>
+    document.querySelector("#requestedMatrix").textContent.includes("Cis"),
+  );
+  assert.match(
+    await page.textContent("#requestedVariants"),
+    /Select a transcript/,
+  );
+  await page.locator("#requestedMatrix button").first().click();
+  assert.match(await page.textContent("#requestedEvidence"), /Both ALT: 24/);
+  assert.match(await page.textContent("#requestedEvidence"), /Cis supported/);
+  await page.locator("#requestedVariants button").first().click();
+  assert.equal(
+    await page.locator("#pileup").getAttribute("data-view-start"),
+    "1070",
+  );
   await page.click("#clear");
   assert.equal(await page.locator("#workspace").isVisible(), false);
   for (const [id, name] of [
