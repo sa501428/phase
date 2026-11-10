@@ -1,3 +1,5 @@
+import { partitionCompatible } from "./compatibility.js";
+import { alignmentRuns } from "./alignment-geometry.js";
 // A compact view of inferred LOCAL groups. Partial/low-quality observations do
 // not create display rows merely because their endpoints or error bases differ.
 export function buildOverview(result, region, opts) {
@@ -167,7 +169,42 @@ export function buildOverview(result, region, opts) {
           m,
         );
     }
-    for (const f of buckets.values()) {
+    const splitBuckets = [];
+    for (const candidate of buckets.values()) {
+      const observations = new Map();
+      for (const m of candidate.members) {
+        const calls = new Map();
+        for (const id of m.readIds) {
+          const r = byID.get(id);
+          for (const run of alignmentRuns(r)) {
+            if (!"M=X".includes(run.op)) continue;
+            for (let i = 0; i < run.length; i++) {
+              const p = run.refStart + i,
+                b = r.seq[run.queryStart + i];
+              if (p < scope.start || p >= scope.end || !"ACGT".includes(b))
+                continue;
+              const prev = calls.get(p);
+              calls.set(p, prev !== undefined && prev !== b ? "!" : b);
+            }
+          }
+        }
+        observations.set(m, calls);
+      }
+      const parts = partitionCompatible(candidate.members, (m) =>
+        observations.get(m),
+      );
+      for (let i = 0; i < parts.length; i++)
+        splitBuckets.push({
+          ...candidate,
+          members: parts[i].items,
+          label:
+            candidate.label + (parts.length > 1 ? ` · subgroup ${i + 1}` : ""),
+          discordantPair: parts[i].internal,
+          compatibleAmbiguity: parts[i].ambiguous,
+        });
+    }
+    for (const f of splitBuckets) {
+      f.id = rows.length;
       f.members.sort((a, b) => a.start - b.start || a.id - b.id);
       f.count = f.members.length;
       f.recordCount = f.members.reduce((n, m) => n + m.readIds.length, 0);

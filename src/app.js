@@ -1,3 +1,4 @@
+import { rawGeometry } from "./alignment-geometry.js";
 import { setupHierarchy, groupColor } from "./tree-view.js";
 import { consensusGeometry } from "./consensus.js";
 import hg19 from "../references/hg19.js";
@@ -21,7 +22,6 @@ function genes() {
   }
   return catalog;
 }
-import { cigarOps } from "./analysis.js";
 import { layoutFamilies } from "./families.js";
 let expandedFamilies = new Set(),
   layoutCache = null,
@@ -738,7 +738,9 @@ function draw() {
         ? `${expandedFamilies.has(family.id) ? "▾" : "▸"} ${family.kind === "overview" ? family.label : `F${family.id + 1}`} ×${row.count}`
         : `  ${row.member.paired ? (row.member.matePresent ? "Pair" : "Single end") : "Read"} ${row.member.id + 1}`;
     c.fillText(
-      label + (family.structuralLinks?.length ? " · SV" : ""),
+      label +
+        (family.discordantPair ? " · !" : "") +
+        (family.structuralLinks?.length ? " · SV" : ""),
       6,
       y + 10,
       left - 12,
@@ -802,6 +804,16 @@ function draw() {
         c.fillStyle = "#fff";
         c.fillText(m.base, x(m.pos), y + 15);
       }
+    }
+    for (const conflict of glyph.conflicts || []) {
+      const xp = x(conflict.pos);
+      c.strokeStyle = "#b66e18";
+      c.beginPath();
+      c.moveTo(xp, y + 5);
+      c.lineTo(xp + Math.max(4, scale), y + 17);
+      c.moveTo(xp, y + 17);
+      c.lineTo(xp + Math.max(4, scale), y + 5);
+      c.stroke();
     }
     for (const e of glyph.events) {
       if (e.op === "I") {
@@ -921,53 +933,11 @@ function geometry(row, ids) {
     geometryCache.set(key, glyph);
     return glyph;
   }
-  const segments = [],
-    mismatches = new Map(),
-    events = new Map(),
-    clips = new Map();
-  for (const id of ids) {
-    const r = readIndex().get(id);
-    let p = r.start,
-      q = 0;
-    for (const [n, op] of cigarOps(r.cigar)) {
-      if ("M=X".includes(op)) {
-        segments.push([p, p + n]);
-        for (let j = 0; j < n; j++) {
-          const pos = p + j,
-            base = r.seq[q + j];
-          if (
-            pos >= data.region.start &&
-            pos < data.region.end &&
-            base !== data.reference[pos - data.region.start]
-          )
-            mismatches.set(`${pos}:${base}`, { pos, base });
-        }
-        p += n;
-        q += n;
-      } else if (op === "I" || op === "D" || op === "N") {
-        const e = { pos: p, rawPos: p, op, length: n };
-        events.set(`${p}:${op}:${n}`, e);
-        if (op === "I") q += n;
-        else p += n;
-      } else if (op === "S") {
-        const clip = { pos: p, seq: r.seq.slice(q, q + n) };
-        clips.set(`${p}:${clip.seq}`, clip);
-        q += n;
-      }
-    }
-  }
-  const merged = [];
-  for (const [s, e] of segments.sort((a, b) => a[0] - b[0])) {
-    const last = merged.at(-1);
-    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
-    else merged.push([s, e]);
-  }
-  const g = {
-    segments: merged,
-    mismatches: [...mismatches.values()],
-    events: [...events.values()],
-    clips: [...clips.values()],
-  };
+  const g = rawGeometry(
+    ids.map((id) => readIndex().get(id)),
+    data.reference,
+    data.region.start,
+  );
   geometryCache.set(key, g);
   return g;
 }

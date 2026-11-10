@@ -1,11 +1,13 @@
-import { cigarOps, normalize } from "./analysis.js";
-// Summarize all members, counting overlapping mates once at each base. Minority
-// errors remain in the expanded reads instead of painting a summary rainbow.
+import { normalize } from "./analysis.js";
+import { alignmentRuns } from "./alignment-geometry.js";
+// Summarize all members, counting overlapping mates once at each base.
+// Contradictory calls are flagged rather than replaced by a majority allele.
 export function consensusGeometry(members, byID, reference, origin, opts) {
   const segments = [],
     votes = new Map(),
     events = new Map(),
     clips = new Map();
+  const withinFragmentConflicts = new Map();
   const anyEligible = members.some((m) =>
     m.readIds.some((id) => !byID.get(id).excluded),
   );
@@ -15,10 +17,10 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
       seenClips = new Map();
     for (const id of m.readIds) {
       const r = byID.get(id);
-      let p = r.start,
-        q = 0;
       const vote = !r.excluded || !anyEligible;
-      for (const [n, op] of cigarOps(r.cigar)) {
+      for (const { op, length: n, refStart: p, queryStart: q } of alignmentRuns(
+        r,
+      )) {
         if ("M=X".includes(op)) {
           segments.push([p, p + n]);
           if (vote)
@@ -38,8 +40,6 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
               if (!calls.has(pos)) calls.set(pos, new Set());
               calls.get(pos).add(b);
             }
-          p += n;
-          q += n;
         } else if (op === "I" || op === "D") {
           const ref =
               op === "D" ? reference.slice(p - origin, p - origin + n) : "",
@@ -54,22 +54,23 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
             qual.every((v) => v !== undefined && v !== 255 && v >= opts.baseq)
           ) {
             const e = normalize(p, ref, alt, reference, origin);
-            seenEvents.set(e.id, { ...e, op, length: n, rawPos: e.pos });
+            // Normalization identifies equivalent alleles for analysis; a
+            // pileup glyph must stay at its observed BAM CIGAR anchor.
+            seenEvents.set(`${e.id}@${p}`, { ...e, op, length: n, rawPos: p });
           }
-          if (op === "I") q += n;
-          else p += n;
-        } else if (op === "N") p += n;
-        else if (op === "S") {
+        } else if (op === "S") {
           if (vote) {
             const c = { pos: p, seq: r.seq.slice(q, q + n) };
             seenClips.set(`${p}:${c.seq}`, c);
           }
-          q += n;
         }
       }
     }
     for (const [p, alleles] of calls) {
-      if (alleles.size !== 1) continue;
+      if (alleles.size !== 1) {
+        withinFragmentConflicts.set(p, { pos: p, alleles: [...alleles] });
+        continue;
+      }
       const b = [...alleles][0];
       if (!votes.has(p)) votes.set(p, new Map());
       const v = votes.get(p);
@@ -90,20 +91,27 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
     if (last && s <= last[1]) last[1] = Math.max(last[1], e);
     else merged.push([s, e]);
   }
-  const mismatches = [];
+  const mismatches = [],
+    conflicts = [];
   for (const [pos, v] of votes) {
-    const sorted = [...v].sort((a, b) => b[1] - a[1]),
-      [base, count] = sorted[0],
-      total = sorted.reduce((n, a) => n + a[1], 0);
-    if (
-      count >= opts.support &&
-      count / total >= 0.7 &&
-      base !== reference[pos - origin]
-    )
+    if (v.size > 1) {
+      conflicts.push({ pos, alleles: [...v.keys()] });
+      continue;
+    }
+    const [base, count] = [...v][0];
+    if (count >= 1 && base !== reference[pos - origin])
       mismatches.push({ pos, base, support: count });
   }
   return {
     segments: merged,
+    conflicts: [
+      ...new Map(
+        [...conflicts, ...withinFragmentConflicts.values()].map((c) => [
+          c.pos,
+          c,
+        ]),
+      ).values(),
+    ],
     mismatches,
     events: [...events.values()].filter((e) => e.support >= opts.support),
     clips: [...clips.values()].filter((c) => c.support >= opts.support),

@@ -16,6 +16,23 @@ try {
   page.on("request", (r) => {
     if (/^https?:/.test(r.url())) network.push(r.url());
   });
+  await page.addInitScript(() => {
+    const original = CanvasRenderingContext2D.prototype.fillRect;
+    CanvasRenderingContext2D.prototype.fillRect = function (x, y, w, h) {
+      if (this.canvas.id === "pileup") {
+        if (x === 0 && y === 0 && this.fillStyle === "#ffffff")
+          window.__pileupRects = [];
+        (window.__pileupRects ??= []).push({
+          x,
+          y,
+          w,
+          h,
+          color: this.fillStyle,
+        });
+      }
+      return original.call(this, x, y, w, h);
+    };
+  });
   await page.goto("file://" + resolve("index.html"));
   await page.click("#demo2");
   await page.waitForFunction(
@@ -64,6 +81,41 @@ try {
   assert.equal(await page.locator("#collapse").isChecked(), true);
   assert.equal(await page.inputValue("#detail"), "overview");
   assert.equal(await page.inputValue("#layer"), "all");
+  const markerPositions = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelector("#pileup"),
+        start = +canvas.dataset.viewStart,
+        end = +canvas.dataset.viewEnd,
+        width = Math.max(
+          400,
+          document.querySelector("#canvasWrap").clientWidth,
+        ),
+        scale = (width - 130) / (end - start);
+      return (window.__pileupRects || [])
+        .filter(
+          (r) =>
+            (r.h === 10 && ["#24865e", "#3075bc"].includes(r.color)) ||
+            (r.w === 4 && r.h === 16 && r.color === "#9c70b3"),
+        )
+        .map((r) => ({
+          color: r.color,
+          pos: start + (r.x + (r.color === "#9c70b3" ? 2 : 0) - 115) / scale,
+        }));
+    });
+  const collapsedMarkers = await markerPositions();
+  assert.ok(
+    collapsedMarkers.some(
+      (m) => m.color === "#9c70b3" && Math.abs(m.pos - 1200) < 1e-6,
+    ),
+  );
+  for (const m of collapsedMarkers)
+    assert.ok(
+      Math.abs(
+        m.pos -
+          (m.color === "#24865e" ? 1120 : m.color === "#3075bc" ? 1160 : 1200),
+      ) < 1e-6,
+    );
+
   await page.locator("#pileup").click({ position: { x: 40, y: 120 } });
   assert.equal(
     await page.locator('#readTable tr[aria-expanded="true"]').count(),
@@ -77,6 +129,16 @@ try {
     document.querySelector("#rowCount").textContent.includes("29–48"),
   );
   assert.match(await page.textContent("#readTable"), /Read 44/);
+  const expandedMarkers = await markerPositions();
+  assert.ok(expandedMarkers.some((m) => m.color === "#9c70b3"));
+  for (const m of expandedMarkers)
+    assert.ok(
+      Math.abs(
+        m.pos -
+          (m.color === "#24865e" ? 1120 : m.color === "#3075bc" ? 1160 : 1200),
+      ) < 1e-6,
+    );
+
   await page.click("#collapseAll");
   assert.match(await page.textContent("#rowCount"), /of 4/);
   // A drag moves genomic content, while a click still expands its family.
@@ -267,7 +329,10 @@ try {
       .querySelector("#status")
       .textContent.includes("eligible fragments analyzed"),
   );
-  assert.match(await page.textContent("#rowCount"), /1 group rows in view/);
+  const strictRows = Number(
+    (await page.textContent("#rowCount")).match(/^(\d+) group rows/)[1],
+  );
+  assert.ok(strictRows > 1 && strictRows <= 200);
   assert.match(
     await page.textContent("#rowCount"),
     /200 total fragments \/ 200 records retained/,
@@ -275,16 +340,28 @@ try {
   await page.selectOption("#detail", "families");
   assert.match(await page.textContent("#rowCount"), /200 families in view/);
   await page.selectOption("#detail", "overview");
-  assert.match(await page.textContent("#rowCount"), /1 group rows in view/);
+  assert.match(
+    await page.textContent("#rowCount"),
+    new RegExp("^" + strictRows + " group rows"),
+  );
   await page.click("#expandAll");
-  assert.match(await page.textContent("#rowCount"), /of 201/);
+  assert.match(
+    await page.textContent("#rowCount"),
+    new RegExp("of " + (200 + strictRows) + " ·"),
+  );
   await page.locator("#pileup").focus();
   await page.keyboard.press("End");
   await page.waitForFunction(() =>
-    document.querySelector("#readTable").textContent.includes("Read 200"),
+    document
+      .querySelector("#rowCount")
+      .textContent.match(/rows \d+–(\d+) of \1/),
   );
+  assert.match(await page.textContent("#readTable"), /Read/);
   await page.click("#collapseAll");
-  assert.match(await page.textContent("#rowCount"), /of 1/);
+  assert.match(
+    await page.textContent("#rowCount"),
+    new RegExp("of " + strictRows + " ·"),
+  );
   assert.deepEqual(errors, []);
   assert.deepEqual(network, []);
   await page.reload();

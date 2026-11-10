@@ -1,3 +1,8 @@
+import {
+  compatibleCalls,
+  mergeCalls,
+  partitionCompatible,
+} from "./compatibility.js";
 export function cigarOps(cigar) {
   const out = [...cigar.matchAll(/(\d+)([MIDNSHP=X])/g)].map((x) => [
     +x[1],
@@ -349,6 +354,16 @@ export function phase(reads, reference, origin, opts, supplied = []) {
   });
   const blocks = [];
   const assignments = new Map();
+  const calls = fs.map((f) => {
+    const c = new Map(
+      [...f.bases]
+        .filter(([p]) => p >= origin && p < origin + reference.length)
+        .map(([p, b]) => [p, b.allele]),
+    );
+    for (const p of f.conflicts)
+      if (p >= origin && p < origin + reference.length) c.set(p, "!");
+    return c;
+  });
   for (const indices of components.values()) {
     const patterns = new Map();
     for (let k = 0; k < fs.length; k++) {
@@ -369,12 +384,25 @@ export function phase(reads, reference, origin, opts, supplied = []) {
       );
     const groups = [];
     for (const seed of seeds) {
-      if (
-        !groups.some((g) =>
-          seed.pattern.every((a, i) => a === "?" || a === g.pattern[i]),
+      const partitions = partitionCompatible(seed.members, (k) => calls[k]);
+      for (const partition of partitions) {
+        if (partition.internal || partition.items.length < opts.support)
+          continue;
+        if (
+          groups.some(
+            (g) =>
+              seed.pattern.every((a, i) => a === "?" || a === g.pattern[i]) &&
+              compatibleCalls(g.calls, partition.calls),
+          )
         )
-      )
-        groups.push({ ...seed, members: [], compatible: 0 });
+          continue;
+        groups.push({
+          ...seed,
+          members: [],
+          compatible: 0,
+          calls: partition.calls,
+        });
+      }
     }
     if (groups.length > 32)
       throw Error(
@@ -385,16 +413,20 @@ export function phase(reads, reference, origin, opts, supplied = []) {
     for (let k = 0; k < fs.length; k++) {
       const a = indices.map((i) => vectors[k][i]);
       if (!a.some((x) => x !== "?")) continue;
-      const match = groups.filter((g) =>
-        a.every(
-          (v, i) => v === "?" || g.pattern[i] === "?" || v === g.pattern[i],
-        ),
+      const match = groups.filter(
+        (g) =>
+          compatibleCalls(g.calls, calls[k]) &&
+          ![...calls[k].values()].includes("!") &&
+          a.every(
+            (v, i) => v === "?" || g.pattern[i] === "?" || v === g.pattern[i],
+          ),
       );
       if (
         match.length === 1 &&
         a.some((v, i) => v !== "?" && match[0].pattern[i] !== "?")
       ) {
         match[0].members.push(k);
+        mergeCalls(match[0].calls, calls[k]);
         const list = assignments.get(k) || [];
         list.push(`B${blocks.length + 1} H${groups.indexOf(match[0]) + 1}`);
         assignments.set(k, list);
@@ -410,7 +442,7 @@ export function phase(reads, reference, origin, opts, supplied = []) {
       end:
         variants[indices.at(-1)].pos +
         Math.max(1, variants[indices.at(-1)].ref.length),
-      groups: groups.map((g, i) => ({
+      groups: groups.map(({ calls, ...g }, i) => ({
         ...g,
         id: i + 1,
         count: g.members.length,

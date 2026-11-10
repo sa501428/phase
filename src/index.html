@@ -200,16 +200,18 @@
             Drag left/right to pan after zooming in. Paired ends share a row;
             thin connectors indicate unsequenced inserts. The default shows one
             row per supported local group, with separate collapsed
-            ambiguous/uninformative rows. Counts retain every fragment. Click a
-            row to inspect its pairs. Groups are local to each phase block; a
-            fragment can appear in more than one block.
+            ambiguous/uninformative rows. One contradictory SNP forces separate
+            rows, even below variant-discovery support. Counts retain every
+            fragment. Click a row to inspect its pairs. Groups are local to each
+            phase block; a fragment can appear in more than one block.
           </p>
           <div class="legend">
             <span class="a">A</span><span class="c">C</span
             ><span class="g">G</span><span class="t">T</span
             ><span>Gray = reference match</span><span>Purple = insertion</span
             ><span>Line = deletion</span><span>Outline = excluded</span
-            ><span>SV = split/mate evidence</span>
+            ><span>SV = split/mate evidence</span
+            ><span>Amber × = conflicting calls</span>
           </div>
           <div class="pileup-layout">
             <section

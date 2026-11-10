@@ -33,28 +33,35 @@ function model(reads, ref, origin = 0) {
   );
   return r;
 }
-test("thousands of unique error patterns collapse to one coverage overview row", () => {
+test("rare SNP clashes split coverage rows while preserving every fragment", () => {
   const ref = "A".repeat(3200),
     reads = Array.from({ length: 3000 }, (_, i) =>
       read(i, i, "A".repeat(20) + "C" + "A".repeat(79)),
     ),
     r = model(reads, ref);
   assert.equal(r.families.length, 3000);
-  assert.equal(r.overview.length, 1);
-  assert.equal(r.overview[0].count, 3000);
+  assert.ok(r.overview.length > 1);
+  assert.equal(
+    r.overview.reduce((n, g) => n + g.count, 0),
+    3000,
+  );
   const rows = layoutFamilies(r.overview, r.reads, {
     start: 0,
     end: ref.length,
   });
-  assert.equal(rows.length, 1);
+  assert.equal(rows.length, r.overview.length);
   const expanded = layoutFamilies(r.overview, r.reads, {
     start: 0,
     end: ref.length,
-    expanded: new Set([0]),
+    expanded: new Set(r.overview.map((g) => g.id)),
   });
-  assert.equal(expanded.length, 3001);
+  assert.equal(expanded.length, 3000 + r.overview.length);
   assert.equal(
-    new Set(expanded.slice(1).flatMap((row) => row.member.readIds)).size,
+    new Set(
+      expanded
+        .filter((row) => row.type === "fragment")
+        .flatMap((row) => row.member.readIds),
+    ).size,
     3000,
   );
 });
@@ -111,7 +118,7 @@ test("duplicates are absorbed without contributing to analysis support", () => {
   assert.equal(r.overview[0].count, 4);
   assert.equal(r.overview[0].duplicates, 1);
 });
-test("summary consensus suppresses isolated errors and counts overlapping mates once", () => {
+test("summary consensus flags contradictions without a majority override and counts overlapping mates once", () => {
   const ref = "A".repeat(20),
     reads = Array.from({ length: 10 }, (_, i) => read(i, 0, "A".repeat(20))),
     byID = new Map(reads.map((r) => [r.id, r]));
@@ -135,12 +142,14 @@ test("summary consensus suppresses isolated errors and counts overlapping mates 
     0,
     opts,
   );
+  assert.equal(supported.mismatches.length, 0);
   assert.deepEqual(
-    supported.mismatches.map((m) => m.pos),
-    [10],
+    supported.conflicts.map((c) => c.pos).sort((a, b) => a - b),
+    [0, 10],
   );
   const one = consensusGeometry([{ readIds: [0, 1] }], byID, ref, 0, opts);
-  assert.equal(one.mismatches.length, 0);
+  assert.equal(one.mismatches.find((m) => m.pos === 10).support, 1);
+  assert.ok(one.conflicts.some((c) => c.pos === 0));
 });
 test("disconnected phase blocks stay separate and every input record remains accessible", () => {
   const d = synthetic(),

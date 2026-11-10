@@ -47,6 +47,8 @@ export function buildFamilies(result, reference, origin, opts) {
       events = [],
       clips = [];
     let uncertain = false;
+    let conflictingSNP = false;
+    const rawCalls = new Map();
     const recordEvidence = [];
     for (const r of reads) {
       if (r.start < origin || r.end > origin + reference.length)
@@ -65,6 +67,11 @@ export function buildFamilies(result, reference, origin, opts) {
               ref = reference[pos - origin],
               quality = r.qual[q + i];
             if (!ref) continue;
+            if ("ACGT".includes(b)) {
+              if (rawCalls.has(pos) && rawCalls.get(pos) !== b)
+                conflictingSNP = true;
+              rawCalls.set(pos, b);
+            }
             const qualified =
               quality !== undefined && quality !== 255 && quality >= opts.baseq;
             const prev = calls.get(pos);
@@ -154,6 +161,7 @@ export function buildFamilies(result, reference, origin, opts) {
       blockScope.length
         ? blockScope
         : ["coverage", componentAt(Math.min(...reads.map((r) => r.start)))],
+      conflictingSNP ? reads.map((r) => r.id) : null,
       uncertain
         ? reads
             .map((r) => [
@@ -172,6 +180,7 @@ export function buildFamilies(result, reference, origin, opts) {
       family = {
         id: families.size,
         observed,
+        discordantPair: conflictingSNP,
         members: [],
         segments: [],
         mismatches: snps.map(([, v]) => v),
