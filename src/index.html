@@ -175,8 +175,8 @@
               </select></label
             ><label
               >Read layer<select id="layer">
-                <option value="eligible">Eligible reads</option>
                 <option value="all">All records, including excluded</option>
+                <option value="eligible">Eligible reads</option>
                 <option value="excluded">Excluded only</option>
               </select></label
             ><label class="check"
@@ -185,6 +185,17 @@
             ><button id="zoomOut">Zoom −</button><button id="left">←</button
             ><button id="right">→</button><button id="fit">Fit</button>
           </div>
+          <label class="check"
+            ><input id="collapse" type="checkbox" checked /> Collapse matching
+            fragment families</label
+          ><button id="collapseAll">Collapse all families</button
+          ><button id="expandAll">Expand all families</button>
+          <p class="muted">
+            Paired ends share a row; thin connectors indicate unsequenced
+            inserts. Family counts retain every fragment, including
+            duplicate-marked records. Click a family or press Enter to expand
+            it.
+          </p>
           <div class="legend">
             <span class="a">A</span><span class="c">C</span
             ><span class="g">G</span><span class="t">T</span
@@ -195,13 +206,18 @@
             <canvas
               id="pileup"
               tabindex="0"
-              aria-label="Read pileup. Arrow keys pan; plus and minus zoom. Use the read table for accessible details."
+              aria-label="Paired fragment pileup. Click a family to expand. Up and down scroll; left and right pan; plus and minus zoom."
             ></canvas>
+            <div
+              id="readScroll"
+              tabindex="0"
+              aria-label="Scroll all fragment families vertically"
+            >
+              <div id="readSpacer"></div>
+            </div>
           </div>
           <div class="rowpage">
-            <button id="prevRows">Previous reads</button
-            ><span id="rowCount"></span
-            ><button id="nextRows">Next reads</button>
+            <span id="rowCount" aria-live="polite"></span>
           </div>
           <div class="panels">
             <section>
@@ -248,7 +264,7 @@
               <div id="eventDetails"></div>
               <details>
                 <summary>
-                  Read to candidate realignments · bounded to 200 records
+                  Read to candidate realignments · all overlapping records
                 </summary>
                 <pre id="realigned"></pre>
               </details>

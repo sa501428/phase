@@ -311,6 +311,18 @@ article {
   background: white;
   border-radius: 6px;
   overflow: hidden;
+  position: relative;
+}
+#readScroll {
+  position: absolute;
+  top: 110px;
+  right: 0;
+  width: 18px;
+  bottom: 0;
+  overflow-y: scroll;
+}
+#readSpacer {
+  width: 1px;
 }
 canvas {
   display: block;

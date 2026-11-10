@@ -16,9 +16,8 @@ export function bgzf(bytes) {
   out.writeUInt16LE(out.length - 1, 16);
   return out;
 }
-export function fixture() {
-  const d = synthetic(),
-    reference = "N".repeat(1000) + d.reference;
+export function fixture(d = synthetic()) {
+  const reference = "N".repeat(1000) + d.reference;
   const text =
     "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:synthetic\tLN:1800\n@RG\tID:synthetic\tSM:synthetic\n";
   const h = Buffer.concat([
@@ -48,8 +47,8 @@ export function fixture() {
     fixed.writeUInt32LE(4681 * 65536 + 60 * 256 + name.length, 8);
     fixed.writeUInt32LE(r.flags * 65536 + ops.length, 12);
     fixed.writeInt32LE(r.seq.length, 16);
-    fixed.writeInt32LE(-1, 20);
-    fixed.writeInt32LE(-1, 24);
+    fixed.writeInt32LE(r.mate >= 0 ? 0 : -1, 20);
+    fixed.writeInt32LE(r.mate ?? -1, 24);
     const body = Buffer.concat([
       fixed,
       name,
@@ -133,13 +132,48 @@ export function fixture() {
     fai: Buffer.from("synthetic\t1800\t11\t1800\t1801\n"),
   };
 }
+export function pairedFixture() {
+  const d = synthetic();
+  d.reads = [];
+  for (let i = 0; i < 12; i++) {
+    const a = 1050 + i,
+      b = 1400 + i;
+    for (const [start, mate, flags] of [
+      [a, b, 65],
+      [b, a, 145],
+    ])
+      d.reads.push({
+        id: d.reads.length,
+        name: "paired-" + i,
+        start,
+        end: start + 50,
+        seq: d.reference.slice(start - 1000, start - 950),
+        cigar: "50M",
+        qual: Array(50).fill(35),
+        flags,
+        mq: 60,
+        rg: "synthetic",
+        sample: "synthetic",
+        mate,
+      });
+  }
+  return fixture(d);
+}
 if (process.argv[1]?.endsWith("fixtures.mjs")) {
   await mkdir("tests/fixtures", { recursive: true });
-  for (const [ext, b] of Object.entries(fixture()))
-    await writeFile(
-      "tests/fixtures/synthetic." +
-        ({ fasta: "fa", fai: "fa.fai", twobit: "2bit" }[ext] || ext),
-      b,
-    );
-  console.log("Generated synthetic BAM/BAI and matching FASTA/FAI");
+  for (const [name, data] of [
+    ["synthetic", fixture()],
+    ["paired", pairedFixture()],
+  ])
+    for (const [ext, b] of Object.entries(data))
+      await writeFile(
+        "tests/fixtures/" +
+          name +
+          "." +
+          ({ fasta: "fa", fai: "fa.fai", twobit: "2bit" }[ext] || ext),
+        b,
+      );
+  console.log(
+    "Generated synthetic variant and paired-end BAM/BAI/CSI and reference fixtures",
+  );
 }

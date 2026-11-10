@@ -1,3 +1,5 @@
+import { completePairs } from "./mates.js";
+import { buildFamilies } from "./families.js";
 import { BamFile } from "@gmod/bam";
 import { LocalFile, referenceReader, resolveReference } from "./io.js";
 import { synthetic } from "./demo.js";
@@ -17,7 +19,11 @@ self.onmessage = async ({ data: m }) => {
       const d = synthetic();
       send("result", {
         ...d,
-        result: phase(d.reads, d.reference, d.region.start, m.opts),
+        result: (() => {
+          const r = phase(d.reads, d.reference, d.region.start, m.opts);
+          r.families = buildFamilies(r, d.reference, d.region.start, m.opts);
+          return r;
+        })(),
         request: m.request,
       });
     } else if (m.type === "open") {
@@ -76,10 +82,19 @@ self.onmessage = async ({ data: m }) => {
         reference = await ref.sequence(name, region.start, region.end);
       if (reference.length !== region.end - region.start)
         throw Error("Incomplete reference");
-      const records = await bam.getRecordsForRange(
+      let records = await bam.getRecordsForRange(
         region.chr,
         region.start,
         region.end,
+      );
+      send("progress", {
+        message: "Retrieving mapped mate alignments from the local index…",
+      });
+      records = await completePairs(
+        bam,
+        records,
+        region.chr,
+        dict.findIndex((x) => x.refName === region.chr),
       );
       if (records.length > 100000)
         throw Error("Over 100,000 alignment records; narrow the interval");
@@ -147,15 +162,16 @@ self.onmessage = async ({ data: m }) => {
         }
       }
       const result = phase(reads, reference, region.start, opts, supplied);
+      result.families = buildFamilies(result, reference, region.start, opts);
       send("result", { result, reference, region, request: m.request });
     } else if (m.type === "event") {
       const path = eventPath(m.event, m.reference, m.origin);
-      const supporting = m.reads
-        .filter((r) => r.start < path.end && r.end > path.start)
-        .slice(0, 200);
+      const supporting = m.reads.filter(
+        (r) => r.start < path.end && r.end > path.start,
+      );
       const realigned = [];
+      let cells = 0;
       for (const r of supporting) {
-        if (r.seq.length > 500) continue;
         const start = Math.max(0, r.start - path.start - 20),
           end = Math.min(
             path.alt.length,
@@ -165,6 +181,11 @@ self.onmessage = async ({ data: m }) => {
         if (!candidate) continue;
         const read = cropRead(r, path.start, path.end);
         if (!read) continue;
+        cells += (candidate.length + 1) * (read.length + 1);
+        if (cells > 20000000)
+          throw Error(
+            "Event realignment exceeds the total cell budget; narrow the interval. No reads were downsampled.",
+          );
         const a = align(candidate, read);
         realigned.push({ id: r.id, ...a });
       }

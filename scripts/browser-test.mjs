@@ -27,6 +27,24 @@ try {
   );
   assert.match(await page.textContent("#metrics"), /44/);
   assert.match(await page.textContent("#events"), /duplication/);
+  assert.match(await page.textContent("#rowCount"), /4 families in view/);
+  assert.equal(await page.locator("#collapse").isChecked(), true);
+  assert.equal(await page.inputValue("#layer"), "all");
+  await page.locator("#pileup").click({ position: { x: 40, y: 120 } });
+  assert.equal(
+    await page.locator('#readTable tr[aria-expanded="true"]').count(),
+    1,
+  );
+  await page.click("#expandAll");
+  assert.match(await page.textContent("#rowCount"), /of 48/);
+  await page.locator("#pileup").focus();
+  await page.keyboard.press("End");
+  await page.waitForFunction(() =>
+    document.querySelector("#rowCount").textContent.includes("29–48"),
+  );
+  assert.match(await page.textContent("#readTable"), /Read 44/);
+  await page.click("#collapseAll");
+  assert.match(await page.textContent("#rowCount"), /of 4/);
   await page.locator("#events button").first().click();
   await page.waitForFunction(() =>
     document.querySelector("#alignment").textContent.includes("Candidate"),
@@ -80,6 +98,45 @@ try {
   await page.fill("#gene", "TP53");
   await page.click("#lookup");
   assert.match(await page.inputValue("#region"), /^chr17:/);
+  await page.click("#clear");
+  for (const [id, name] of [
+    ["bam", "paired.bam"],
+    ["index", "paired.bai"],
+    ["reference", "paired.fa"],
+    ["fai", "paired.fa.fai"],
+  ])
+    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
+  await page.check("#confirm");
+  await page.click("#open");
+  await page.waitForFunction(() =>
+    document.querySelector("#status").textContent.startsWith("Files open"),
+  );
+  await page.fill("#region", "synthetic:1001-1800");
+  await page.click("#run");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("eligible fragments analyzed"),
+  );
+  assert.match(await page.textContent("#rowCount"), /1 families in view/);
+  assert.match(
+    await page.textContent("#rowCount"),
+    /12 total fragments \/ 24 records retained/,
+  );
+  await page.click("#expandAll");
+  assert.match(await page.textContent("#readTable"), /Pair/);
+  assert.match(await page.textContent("#readTable"), /50M \/ 50M/);
+  await page.fill("#region", "synthetic:1051-1110");
+  await page.click("#run");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("eligible fragments analyzed"),
+  );
+  assert.match(
+    await page.textContent("#rowCount"),
+    /12 total fragments \/ 24 records retained/,
+  );
   assert.deepEqual(errors, []);
   assert.deepEqual(network, []);
   await page.reload();

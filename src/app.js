@@ -20,6 +20,12 @@ function genes() {
   return catalog;
 }
 import { cigarOps } from "./analysis.js";
+import { layoutFamilies } from "./families.js";
+let expandedFamilies = new Set(),
+  layoutCache = null,
+  scrollOffset = 0;
+const ROW_HEIGHT = 24,
+  VIEW_HEIGHT = 480;
 const $ = (id) => document.getElementById(id),
   el = (tag, text, cls) => {
     const e = document.createElement(tag);
@@ -121,9 +127,11 @@ function startWorker() {
     if (m.type === "result") {
       if (m.request !== job) return;
       busy(false);
+      expandedFamilies.clear();
       data = m;
       view = { start: m.region.start, end: m.region.end };
       rows = 0;
+      invalidateLayout();
       selected = null;
       render();
       status(
@@ -161,6 +169,15 @@ function clear() {
   url = null;
   clearTimeout(timer);
   opened = false;
+  expandedFamilies.clear();
+  painted = [];
+  layoutCache = null;
+  scrollOffset = 0;
+  indexedData = null;
+  indexedReads = null;
+  geometryCache.clear();
+  $("readSpacer").style.height = "0px";
+  $("readScroll").scrollTop = 0;
   data = null;
   view = null;
   contigs = [];
@@ -218,6 +235,12 @@ $("open").onclick = async () => {
         throw Error("Select BAM, index, and reference files");
     if (!$("confirm").checked)
       throw Error("Confirm the exact alignment reference before opening");
+    expandedFamilies.clear();
+    layoutCache = null;
+    scrollOffset = 0;
+    indexedData = null;
+    indexedReads = null;
+    geometryCache.clear();
     data = null;
     $("workspace").hidden = true;
     $("empty").hidden = false;
@@ -338,31 +361,27 @@ $("transcript").onchange = () => {
 };
 function visibleReads() {
   if (!data) return [];
-  const r = data.result,
-    group = new Map();
-  for (const f of r.fragments)
-    for (const id of f.reads)
-      group.set(id, f.groups.join(", ") || "Unassigned");
-  let reads = r.reads
-    .filter((x) => x.start < view.end && x.end > view.start)
-    .filter(
-      (x) =>
-        $("layer").value === "all" ||
-        ($("layer").value === "excluded" ? x.excluded : !x.excluded),
-    );
-  const sort = $("sort").value;
-  reads.sort((a, b) =>
-    sort === "group"
-      ? (group.get(a.id) || "Excluded").localeCompare(
-          group.get(b.id) || "Excluded",
-        ) || a.start - b.start
-      : sort === "quality"
-        ? b.mq - a.mq
-        : sort === "strand"
-          ? (a.flags & 16) - (b.flags & 16) || a.start - b.start
-          : a.start - b.start,
-  );
-  return reads.map((x) => ({ ...x, group: group.get(x.id) || "Excluded" }));
+  if (!layoutCache)
+    layoutCache = layoutFamilies(data.result.families, data.result.reads, {
+      start: view.start,
+      end: view.end,
+      layer: $("layer").value,
+      sort: $("sort").value,
+      collapsed: $("collapse").checked,
+      expanded: expandedFamilies,
+    });
+  return layoutCache;
+}
+function invalidateLayout() {
+  layoutCache = null;
+  scrollOffset = 0;
+  $("readScroll").scrollTop = 0;
+}
+function toggleFamily(id) {
+  if (expandedFamilies.has(id)) expandedFamilies.delete(id);
+  else expandedFamilies.add(id);
+  layoutCache = null;
+  draw();
 }
 function render() {
   const r = data.result;
@@ -431,6 +450,7 @@ function render() {
         end: Math.min(data.region.end, v.pos + 100),
       };
       rows = 0;
+      invalidateLayout();
       draw();
     };
     $("variants").append(row);
@@ -498,6 +518,9 @@ function pair() {
 $("v1").onchange = pair;
 $("v2").onchange = pair;
 function showEvent(e) {
+  $("alignment").textContent = "Aligning every overlapping record…";
+  $("realigned").textContent = "";
+  $("eventDetails").textContent = "";
   $("expanded").hidden = false;
   $("eventTitle").textContent =
     `${e.type} at ${e.pos + 1}${e.source ? ` · source ${e.source[0] + 1}–${e.source[1]}` : ""}`;
@@ -525,9 +548,16 @@ function draw() {
   const canvas = $("pileup"),
     width = Math.max(400, $("canvasWrap").clientWidth),
     all = visibleReads();
-  rows = Math.min(rows, Math.max(0, Math.ceil(all.length / 150) - 1) * 150);
-  painted = all.slice(rows, rows + 150);
-  const height = 110 + Math.max(5, painted.length) * 15,
+  const totalHeight = all.length * ROW_HEIGHT;
+  const viewportHeight = Math.min(VIEW_HEIGHT, Math.max(120, totalHeight));
+  $("readSpacer").style.height = Math.max(viewportHeight, totalHeight) + "px";
+  scrollOffset = Math.min(
+    scrollOffset,
+    Math.max(0, totalHeight - viewportHeight),
+  );
+  rows = Math.floor(scrollOffset / ROW_HEIGHT);
+  painted = all.slice(rows, rows + Math.ceil(viewportHeight / ROW_HEIGHT) + 1);
+  const height = 110 + viewportHeight,
     dpr = window.devicePixelRatio || 1;
   canvas.width = width * dpr;
   canvas.height = height * dpr;
@@ -553,7 +583,7 @@ function draw() {
     c.lineTo(x(p), height);
     c.stroke();
   }
-  const max = Math.max(1, ...data.result.coverage);
+  const max = data.result.coverage.reduce((a, b) => Math.max(a, b), 1);
   for (let p = Math.floor(view.start); p < view.end; p++) {
     const b = data.reference[p - data.region.start];
     c.fillStyle = colors[b] || "#888";
@@ -573,87 +603,237 @@ function draw() {
     c.lineTo(x(b.end), 94);
     c.stroke();
   }
-  painted.forEach((r, i) => {
-    const y = 110 + i * 15;
-    c.fillStyle = r.excluded ? "#a68d80" : "#638975";
-    c.fillText(r.group.slice(0, 16), 8, y + 9);
-    let p = r.start,
-      q = 0;
-    for (const [n, op] of cigarOps(r.cigar)) {
-      if ("M=X".includes(op)) {
-        c.fillStyle = r.excluded ? "#dfe2de" : "#c6d0c8";
-        c.fillRect(
-          Math.max(left, x(p)),
-          y,
-          Math.max(0, Math.min(width - 12, x(p + n)) - Math.max(left, x(p))),
-          10,
-        );
-        for (let j = 0; j < n; j++) {
-          const pos = p + j;
-          if (pos < view.start || pos >= view.end) continue;
-          const b = r.seq[q + j];
-          if (b !== data.reference[pos - data.region.start]) {
-            c.fillStyle = colors[b] || "#aaa";
-            c.fillRect(x(pos), y, Math.max(1, scale), 10);
-          }
-          if (scale > 9) {
-            c.fillStyle =
-              b === data.reference[pos - data.region.start]
-                ? "#5f7065"
-                : "#fff";
-            c.fillText(b, x(pos), y + 9);
-          }
-        }
-        p += n;
-        q += n;
-      } else if (op === "D" || op === "N") {
-        c.strokeStyle = op === "D" ? "#7b817c" : "#bcc9c0";
+  c.save();
+  c.beginPath();
+  c.rect(0, 110, width, VIEW_HEIGHT);
+  c.clip();
+  painted.forEach((row, i) => {
+    const y = 110 + i * ROW_HEIGHT - (scrollOffset % ROW_HEIGHT),
+      family = row.family;
+    c.fillStyle = row.type === "family" ? "#edf4ef" : "#fff";
+    c.fillRect(0, y, width, ROW_HEIGHT - 1);
+    c.fillStyle = "#365f50";
+    const label =
+      row.type === "family"
+        ? `${expandedFamilies.has(family.id) ? "▾" : "▸"} F${family.id + 1} ×${row.count}`
+        : `  ${row.member.paired ? (row.member.matePresent ? "Pair" : "Single end") : "Read"} ${row.member.id + 1}`;
+    c.fillText(label, 6, y + 10);
+    c.fillStyle = "#7d8e84";
+    c.fillText(row.group.slice(0, 17), 6, y + 21);
+    c.save();
+    c.beginPath();
+    c.rect(left, y, width - left - 20, ROW_HEIGHT);
+    c.clip();
+    const visibleIDs =
+      row.type === "family"
+        ? row.members.flatMap((m) => m.readIds)
+        : row.member.readIds;
+    const members = row.type === "family" ? row.members : [row.member];
+    // Draw each fragment's connector, never a family-wide fabricated bridge.
+    c.strokeStyle = "#b6c5bc";
+    c.setLineDash([3, 3]);
+    const byID = readIndex();
+    for (const member of members) {
+      const rr = member.readIds.map((id) => byID.get(id)),
+        r1 = rr.find((r) => r.flags & 64),
+        r2 = rr.find((r) => r.flags & 128);
+      if (r1 && r2) {
         c.beginPath();
-        c.moveTo(x(p), y + 5);
-        c.lineTo(x(p + n), y + 5);
+        c.moveTo(x(Math.min(r1.end, r2.end)), y + 11);
+        c.lineTo(x(Math.max(r1.start, r2.start)), y + 11);
         c.stroke();
-        p += n;
-      } else if (op === "I") {
-        c.fillStyle = "#9c70b3";
-        c.fillRect(x(p) - 2, y - 2, 4, 14);
-        q += n;
-      } else if (op === "S") {
-        c.fillStyle = "#b3a0c2";
-        const xp = x(p);
-        c.fillRect(xp - 2, y, 4, 10);
-        if ($("clips").checked && scale > 8) {
-          c.fillText(r.seq.slice(q, q + n), xp, y + 10);
-        }
-        q += n;
       }
     }
+    c.setLineDash([]);
+    const glyph = geometry(row, visibleIDs);
+    c.fillStyle = visibleIDs.every((id) => byID.get(id).excluded)
+      ? "#dedbd5"
+      : "#b9cbbf";
+    for (const [s, e] of glyph.segments)
+      c.fillRect(x(s), y + 6, Math.max(1, (e - s) * scale), 10);
+    for (const m of glyph.mismatches) {
+      if (m.pos < view.start || m.pos >= view.end) continue;
+      c.fillStyle = colors[m.base] || "#aaa";
+      c.fillRect(x(m.pos), y + 6, Math.max(1, scale), 10);
+      if (scale > 9) {
+        c.fillStyle = "#fff";
+        c.fillText(m.base, x(m.pos), y + 15);
+      }
+    }
+    for (const e of glyph.events) {
+      if (e.op === "I") {
+        c.fillStyle = "#9c70b3";
+        c.fillRect(x(e.rawPos ?? e.pos) - 2, y + 3, 4, 16);
+      } else {
+        c.strokeStyle = e.op === "D" ? "#7b817c" : "#bcc9c0";
+        c.beginPath();
+        c.moveTo(x(e.rawPos ?? e.pos), y + 11);
+        c.lineTo(x((e.rawPos ?? e.pos) + e.length), y + 11);
+        c.stroke();
+      }
+    }
+    for (const clip of glyph.clips) {
+      c.fillStyle = "#b3a0c2";
+      c.fillRect(x(clip.pos) - 2, y + 6, 4, 10);
+      if ($("clips").checked && scale > 8)
+        c.fillText(clip.seq, x(clip.pos), y + 15);
+    }
+    c.restore();
   });
+  c.restore();
+  const families = new Set(all.map((row) => row.family.id));
+  const fragmentCount = data.result.families.reduce((n, f) => n + f.count, 0);
   $("rowCount").textContent =
-    `Records ${all.length ? rows + 1 : 0}–${Math.min(rows + 150, all.length)} of ${all.length} in view · ${Math.round(view.start + 1)}–${Math.round(view.end)}`;
+    `${families.size} families in view · rows ${all.length ? rows + 1 : 0}–${Math.min(rows + Math.ceil(viewportHeight / ROW_HEIGHT), all.length)} of ${all.length} · ${fragmentCount} total fragments / ${data.result.reads.length} records retained · no downsampling`;
   $("readTable").replaceChildren();
-  for (const r of painted) {
-    const tr = el("tr");
-    for (const v of [
-      `Record ${r.id + 1}`,
-      r.start + 1,
-      r.cigar,
-      r.mq,
-      r.flags,
-      r.group,
+  for (const row of painted) {
+    const tr = el("tr"),
+      family = row.family,
+      member = row.type === "fragment" ? row.member : null;
+    for (const value of [
+      row.type === "family"
+        ? `Family ${family.id + 1} · ${row.count} fragments`
+        : `${member.paired ? (member.matePresent ? "Pair" : "Single end") : "Read"} ${member.id + 1}`,
+      row.start + 1,
+      member
+        ? member.readIds.map((id) => readIndex().get(id).cigar).join(" / ")
+        : `${family.recordCount} records · ${family.duplicates} duplicate-marked fragments`,
+      member
+        ? member.readIds.map((id) => readIndex().get(id).mq).join(" / ")
+        : "Expand to inspect",
+      member
+        ? member.readIds.map((id) => readIndex().get(id).flags).join(" / ")
+        : `${family.excluded} excluded fragments`,
+      row.group,
     ])
-      tr.append(el("td", v));
+      tr.append(el("td", value));
     tr.tabIndex = 0;
+    tr.setAttribute("role", "button");
+    if (row.type === "family")
+      tr.setAttribute("aria-expanded", String(expandedFamilies.has(family.id)));
     const detail = () => {
-      $("readDetail").textContent =
-        `Read name (selected explicitly): ${r.name}\nStart: ${r.start + 1}\nCIGAR: ${r.cigar}\nFlags: ${r.flags}\nMate start: ${r.mate >= 0 ? r.mate + 1 : "unavailable"}\nSequence: ${r.seq}\nBase qualities: ${r.qual.join(",")}`;
+      if (row.type === "family") {
+        toggleFamily(family.id);
+        return;
+      }
+      $("readDetail").textContent = member.readIds
+        .map((id) => {
+          const r = readIndex().get(id);
+          return `Read name (selected explicitly): ${r.name}\nStart: ${r.start + 1}\nCIGAR: ${r.cigar}\nFlags: ${r.flags}\nMate start: ${r.mate >= 0 ? r.mate + 1 : "unavailable"}\nSequence: ${r.seq}\nBase qualities: ${r.qual.join(",")}`;
+        })
+        .join("\n\n");
     };
     tr.onclick = detail;
     tr.onkeydown = (e) => {
-      if (e.key === "Enter") detail();
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        detail();
+      }
     };
     $("readTable").append(tr);
   }
 }
+let indexedData = null,
+  indexedReads = null,
+  geometryCache = new Map();
+function readIndex() {
+  if (indexedData !== data) {
+    indexedData = data;
+    indexedReads = new Map(data.result.reads.map((r) => [r.id, r]));
+    geometryCache.clear();
+  }
+  return indexedReads;
+}
+function geometry(row, ids) {
+  const key =
+    row.type === "family"
+      ? `f${row.family.id}:${$("layer").value}`
+      : `m${row.member.id}:${$("layer").value}`;
+  if (geometryCache.has(key)) return geometryCache.get(key);
+  const segments = [],
+    mismatches = new Map(),
+    events = new Map(),
+    clips = new Map();
+  for (const id of ids) {
+    const r = readIndex().get(id);
+    let p = r.start,
+      q = 0;
+    for (const [n, op] of cigarOps(r.cigar)) {
+      if ("M=X".includes(op)) {
+        segments.push([p, p + n]);
+        for (let j = 0; j < n; j++) {
+          const pos = p + j,
+            base = r.seq[q + j];
+          if (
+            pos >= data.region.start &&
+            pos < data.region.end &&
+            base !== data.reference[pos - data.region.start]
+          )
+            mismatches.set(`${pos}:${base}`, { pos, base });
+        }
+        p += n;
+        q += n;
+      } else if (op === "I" || op === "D" || op === "N") {
+        const e = { pos: p, rawPos: p, op, length: n };
+        events.set(`${p}:${op}:${n}`, e);
+        if (op === "I") q += n;
+        else p += n;
+      } else if (op === "S") {
+        const clip = { pos: p, seq: r.seq.slice(q, q + n) };
+        clips.set(`${p}:${clip.seq}`, clip);
+        q += n;
+      }
+    }
+  }
+  const merged = [];
+  for (const [s, e] of segments.sort((a, b) => a[0] - b[0])) {
+    const last = merged.at(-1);
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  const g = {
+    segments: merged,
+    mismatches: [...mismatches.values()],
+    events: [...events.values()],
+    clips: [...clips.values()],
+  };
+  geometryCache.set(key, g);
+  return g;
+}
+$("pileup").onclick = (e) => {
+  const y = e.clientY - $("pileup").getBoundingClientRect().top;
+  if (y < 110) return;
+  const row = visibleReads()[Math.floor((y - 110 + scrollOffset) / ROW_HEIGHT)];
+  if (row?.type === "family") toggleFamily(row.family.id);
+};
+$("readScroll").onscroll = () => {
+  scrollOffset = $("readScroll").scrollTop;
+  draw();
+};
+$("pileup").addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    $("readScroll").scrollTop += e.deltaY;
+  },
+  { passive: false },
+);
+$("collapse").onchange = () => {
+  invalidateLayout();
+  draw();
+};
+$("collapseAll").onclick = () => {
+  expandedFamilies.clear();
+  $("collapse").checked = true;
+  invalidateLayout();
+  draw();
+};
+$("expandAll").onclick = () => {
+  for (const f of data?.result.families || []) expandedFamilies.add(f.id);
+  invalidateLayout();
+  draw();
+};
+
 function zoom(f) {
   if (!view) return;
   const center = (view.start + view.end) / 2,
@@ -670,6 +850,7 @@ function zoom(f) {
   );
   view.end = Math.min(data.region.end, view.start + Math.ceil(span));
   rows = 0;
+  invalidateLayout();
   draw();
 }
 function pan(f) {
@@ -681,6 +862,7 @@ function pan(f) {
   );
   view.end = view.start + span;
   rows = 0;
+  invalidateLayout();
   draw();
 }
 $("zoomIn").onclick = () => zoom(0.5);
@@ -691,23 +873,42 @@ $("fit").onclick = () => {
   if (data) {
     view = { ...data.region };
     rows = 0;
+    invalidateLayout();
     draw();
   }
 };
 for (const id of ["sort", "layer", "clips"])
   $(id).onchange = () => {
     rows = 0;
+    invalidateLayout();
     draw();
   };
-$("prevRows").onclick = () => {
-  rows = Math.max(0, rows - 150);
-  draw();
-};
-$("nextRows").onclick = () => {
-  rows += 150;
-  draw();
-};
 $("pileup").onkeydown = (e) => {
+  if (
+    ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(
+      e.key,
+    )
+  ) {
+    e.preventDefault();
+    const scroll = $("readScroll");
+    if (e.key === "Home") scroll.scrollTop = 0;
+    else if (e.key === "End") scroll.scrollTop = scroll.scrollHeight;
+    else
+      scroll.scrollTop +=
+        (e.key === "ArrowUp"
+          ? -1
+          : e.key === "ArrowDown"
+            ? 1
+            : e.key === "PageUp"
+              ? -20
+              : 20) * ROW_HEIGHT;
+    return;
+  }
+  if (e.key === "Enter") {
+    const row = visibleReads()[Math.floor(scrollOffset / ROW_HEIGHT)];
+    if (row?.type === "family") toggleFamily(row.family.id);
+    return;
+  }
   if (["ArrowLeft", "ArrowRight", "+", "-"].includes(e.key)) {
     e.preventDefault();
     if (e.key === "ArrowLeft") pan(-0.25);
