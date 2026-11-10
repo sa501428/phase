@@ -1,4 +1,5 @@
 import { synthetic } from "../src/demo.js";
+import { somaticDemo } from "../v2/somatic-demo.js";
 import { gzipSync } from "node:zlib";
 import { mkdir, writeFile } from "node:fs/promises";
 const i32 = (n) => {
@@ -64,17 +65,29 @@ export function fixture(d = synthetic()) {
     pos += body.length + 4;
   }
   const raw = Buffer.concat([h, ...records]);
-  if (raw.length > 64000)
-    throw Error("Fixture too large for single BGZF block");
   const v = (n) => {
     const b = Buffer.alloc(8);
     b.writeBigUInt64LE(BigInt(n));
     return b;
   };
   const cut = Math.floor(raw.length / 2),
-    block1 = bgzf(raw.subarray(0, cut)),
-    block2 = bgzf(raw.subarray(cut)),
+    blocks = [];
+  let last;
+  if (raw.length <= 64000) {
+    const block1 = bgzf(raw.subarray(0, cut)),
+      block2 = bgzf(raw.subarray(cut));
+    blocks.push(block1, block2);
     last = block1.length * 65536 + raw.length - cut;
+  } else {
+    let compressed = 0;
+    for (let at = 0; at < raw.length; at += 32000) {
+      const bytes = raw.subarray(at, Math.min(raw.length, at + 32000)),
+        block = bgzf(bytes);
+      last = compressed * 65536 + bytes.length;
+      blocks.push(block);
+      compressed += block.length;
+    }
+  }
   const bai = Buffer.concat([
     Buffer.from("BAI\x01"),
     i32(contigs.length),
@@ -129,7 +142,7 @@ export function fixture(d = synthetic()) {
     dna,
   ]);
   return {
-    bam: Buffer.concat([block1, block2, bgzf(Buffer.alloc(0))]),
+    bam: Buffer.concat([...blocks, bgzf(Buffer.alloc(0))]),
     bai,
     csi,
     twobit,
@@ -307,6 +320,7 @@ if (process.argv[1]?.endsWith("fixtures.mjs")) {
     ["structural", structuralFixture()],
     ["noisy", noisyFixture()],
     ["record-compatibility", recordCompatibilityFixture()],
+    ["somatic-ten", fixture(somaticDemo({ partials: true }))],
   ])
     for (const [ext, b] of Object.entries(data))
       await writeFile(

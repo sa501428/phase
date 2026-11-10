@@ -1,6 +1,7 @@
 import { chromium } from "playwright-core";
 import { resolve } from "node:path";
 import assert from "node:assert/strict";
+import { demo } from "../v2/demo.js";
 const browser = await chromium.launch({
   executablePath:
     process.env.CHROME_PATH ||
@@ -9,419 +10,235 @@ const browser = await chromium.launch({
   args: ["--disable-background-networking"],
 });
 try {
-  const page = await browser.newPage();
-  const errors = [],
-    network = [];
+  const page = await browser.newPage({
+      viewport: { width: 1440, height: 1100 },
+    }),
+    errors = [],
+    network = [],
+    violations = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("request", (r) => {
     if (/^https?:/.test(r.url())) network.push(r.url());
   });
-  await page.addInitScript(() => {
-    const original = CanvasRenderingContext2D.prototype.fillRect;
-    CanvasRenderingContext2D.prototype.fillRect = function (x, y, w, h) {
-      if (this.canvas.id === "pileup") {
-        if (x === 0 && y === 0 && this.fillStyle === "#ffffff")
-          window.__pileupRects = [];
-        (window.__pileupRects ??= []).push({
-          x,
-          y,
-          w,
-          h,
-          color: this.fillStyle,
-        });
-      }
-      return original.call(this, x, y, w, h);
-    };
+  page.on("console", (m) => {
+    if (m.type() === "error") violations.push(m.text());
   });
   await page.goto("file://" + resolve("index.html"));
-  await page.click("#demo2");
+  assert.equal(await page.title(), "Phase · local clone viewer");
+  assert.equal(
+    await page.getAttribute("header a", "href"),
+    "archive/index.html",
+  );
+  await page.click("#demo");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("104 input records retained"),
+  );
+  assert.match(await page.textContent("#blocks"), /Block 1 · 3 supported/);
+  assert.match(await page.textContent("#blocks"), /Block 2 · 2 supported/);
+  assert.equal(await page.locator(".path").count(), 5);
+  await page.locator(".path").first().click();
+  assert.match(
+    await page.textContent("#inspection"),
+    /12 exclusively assigned fragments \/ 36/,
+  );
+  await page.click("#expand");
+  assert.match(
+    await page.textContent("#read-count"),
+    /12 fragments · 24 alignment records/,
+  );
+  await page.locator("#reads").evaluate((e) => (e.scrollTop = e.scrollHeight));
+  await page.waitForFunction(
+    () => +document.querySelector("#read-canvas").dataset.firstRow > 0,
+  );
+  await page.locator("#read-canvas").scrollIntoViewIfNeeded();
+  const canvas = page.locator("#read-canvas"),
+    box = await canvas.boundingBox(),
+    before = +(await canvas.getAttribute("data-view-start"));
+  await page.mouse.move(box.x + box.width / 2, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 75, box.y + 100, { steps: 5 });
+  await page.mouse.up();
+  assert.ok(+(await canvas.getAttribute("data-view-start")) < before);
+  await page.click("#allreads");
+  assert.match(
+    await page.textContent("#read-count"),
+    /52 fragments · 104 alignment records/,
+  );
+  const d = demo(),
+    r1 = d.reference[120],
+    r2 = d.reference[160],
+    a1 = r1 === "A" ? "T" : "A",
+    a2 = r2 === "C" ? "G" : "C";
+  await page.fill(
+    "#variants",
+    `synthetic:1121${r1}>${a1}\nsynthetic:1161${r2}>${a2}`,
+  );
+  await page.click("#query");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#query-results")
+      .textContent.includes("Both ALT: 24"),
+  );
+  assert.match(await page.textContent("#query-results"), /Cis supported/);
+  await page.screenshot({ path: "/tmp/phase-v2-desktop.png", fullPage: true });
+  await page.click("#close-reads");
+  await page.uncheck("#demo-ref");
+  await page.click("#demo");
   await page.waitForFunction(
     () =>
       document
         .querySelector("#status")
-        .textContent.includes("eligible fragments analyzed"),
-    { timeout: 20000 },
+        .textContent.includes("104 input records retained") &&
+      !document.querySelector("#demo").disabled,
   );
-  assert.match(await page.textContent("#metrics"), /44/);
-  assert.match(await page.textContent("#events"), /duplication/);
-  assert.match(await page.textContent("#blockChips"), /B1: 3 groups/);
-  assert.match(await page.textContent("#blockChips"), /B2: 1 groups/);
+  await page.click("#query");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#query-results")
+      .textContent.includes("REF unverified"),
+  );
+  assert.match(await page.textContent("#query-results"), /Both ALT: 24/);
+  const dl = page.waitForEvent("download");
+  await page.click("#gfa");
+  assert.equal((await dl).suggestedFilename(), "phase-local-assembly.gfa");
+  await page.selectOption("#demo-kind", "somatic");
+  await page.click("#demo");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("353 input records retained"),
+  );
   assert.match(
-    await page.textContent("#treeSummary"),
-    /3 supported groups → 2 similarity clusters/,
+    await page.textContent("#blocks"),
+    /10 supported local patterns/,
   );
-  await page.locator("#treeCanvas").hover({ position: { x: 180, y: 35 } });
-  assert.match(
-    await page.textContent("#groupInfo"),
-    /12 assigned eligible fragments \/ 36/,
-  );
-  await page.locator("#treeCanvas").press("ArrowDown");
-  assert.match(await page.textContent("#groupInfo"), /24\/36 \(66.7%\)/);
-  await page.locator("#treeCut").focus();
-  await page.keyboard.press("End");
-  await page.locator("#treeCut").dispatchEvent("input");
-  assert.match(
-    await page.textContent("#treeSummary"),
-    /→ 1 similarity clusters/,
-  );
-  await page.selectOption("#treeBlock", "2");
-  assert.match(
-    await page.textContent("#treeSummary"),
-    /B2: 1 supported groups/,
-  );
-  await page.selectOption("#treeBlock", "1");
-  await page.locator("#treeCut").evaluate((e) => (e.value = "25"));
-  await page.locator("#treeCut").dispatchEvent("input");
-  assert.equal(
-    await page.locator("#evidenceDetails").getAttribute("open"),
-    null,
-  );
-
-  assert.match(await page.textContent("#rowCount"), /4 group rows in view/);
-  assert.equal(await page.locator("#collapse").isChecked(), true);
-  assert.equal(await page.inputValue("#detail"), "overview");
-  assert.equal(await page.inputValue("#layer"), "all");
-  const markerPositions = () =>
-    page.evaluate(() => {
-      const canvas = document.querySelector("#pileup"),
-        start = +canvas.dataset.viewStart,
-        end = +canvas.dataset.viewEnd,
-        width = Math.max(
-          400,
-          document.querySelector("#canvasWrap").clientWidth,
-        ),
-        scale = (width - 130) / (end - start);
-      return (window.__pileupRects || [])
-        .filter(
-          (r) =>
-            (r.h === 10 && ["#24865e", "#3075bc"].includes(r.color)) ||
-            (r.w === 4 && r.h === 16 && r.color === "#9c70b3"),
-        )
-        .map((r) => ({
-          color: r.color,
-          pos: start + (r.x + (r.color === "#9c70b3" ? 2 : 0) - 115) / scale,
-        }));
-    });
-  const collapsedMarkers = await markerPositions();
+  assert.match(await page.textContent("#blocks"), /5 shared\/ambiguous/);
+  assert.equal(await page.locator(".path").count(), 10);
+  await page.screenshot({ path: "/tmp/phase-v2-somatic.png", fullPage: true });
+  // Exercise actual binary BAM indexes and both reference formats, including
+  // legal omitted SEQ and malformed per-record display geometry.
+  for (const [fixture, index, reference] of [
+    ["synthetic", "bai", null],
+    ["paired", "csi", "fa"],
+    ["record-compatibility", "bai", "2bit"],
+    ["structural", "bai", null],
+    ["somatic-ten", "csi", null],
+  ]) {
+    await page.click("#reset");
+    await page.setInputFiles("#bam", resolve(`tests/fixtures/${fixture}.bam`));
+    await page.setInputFiles(
+      "#index",
+      resolve(`tests/fixtures/${fixture}.${index}`),
+    );
+    if (reference) {
+      await page.setInputFiles(
+        "#reference",
+        resolve(`tests/fixtures/${fixture}.${reference}`),
+      );
+      if (reference === "fa")
+        await page.setInputFiles(
+          "#fai",
+          resolve(`tests/fixtures/${fixture}.fa.fai`),
+        );
+    }
+    await page.click("#open");
+    await page.waitForFunction(() =>
+      document.querySelector("#status").textContent.includes("BAM opened"),
+    );
+    await page.fill("#chr", "synthetic");
+    await page.fill("#start", "1001");
+    await page.fill("#end", "1800");
+    await page.click("#run");
+    await page.waitForFunction(() =>
+      document
+        .querySelector("#status")
+        .textContent.includes("input records retained"),
+    );
+    if (fixture === "record-compatibility") {
+      assert.match(
+        await page.textContent("#status"),
+        /50 input records retained · 44 quality-eligible/,
+      );
+      assert.match(await page.textContent("#graph-note"), /3 missing-sequence/);
+    }
+    if (fixture === "structural")
+      assert.match(
+        await page.textContent("#structural"),
+        /translocation|inversion/i,
+      );
+    if (fixture === "somatic-ten") {
+      assert.match(
+        await page.textContent("#blocks"),
+        /10 supported local patterns/,
+      );
+      assert.match(await page.textContent("#blocks"), /5 shared\/ambiguous/);
+    }
+    if (fixture === "paired") {
+      await page.fill("#start", "1051");
+      await page.fill("#end", "1110");
+      await page.click("#run");
+      await page.waitForFunction(() =>
+        document
+          .querySelector("#status")
+          .textContent.includes(
+            "24 input records retained · 12 quality-eligible",
+          ),
+      );
+      assert.match(await page.textContent("#graph-note"), /12 outside-target/);
+    }
+    await page
+      .locator("#segments")
+      .evaluate((e) => (e.parentElement.open = true));
+    await page.locator("#segments button").first().click();
+    await page.click("#expand");
+    await page.click("#allreads");
+    assert.equal(await page.locator("#read-canvas").count(), 1);
+  }
+  await page.click("#reset");
+  assert.equal(await page.inputValue("#bam"), "");
+  assert.equal(await page.locator(".path").count(), 0);
+  assert.equal(await page.locator("#read-canvas").count(), 0);
+  await page
+    .locator("#gene")
+    .evaluate((e) => (e.closest("details").open = true));
+  await page.fill("#gene", "TP53");
+  await page.click("#find");
+  assert.match(await page.inputValue("#chr"), /17/);
   assert.ok(
-    collapsedMarkers.some(
-      (m) => m.color === "#9c70b3" && Math.abs(m.pos - 1200) < 1e-6,
+    +(await page.inputValue("#end")) > +(await page.inputValue("#start")),
+  );
+  const transcriptSpan =
+    +(await page.inputValue("#end")) - +(await page.inputValue("#start"));
+  await page.selectOption("#exon", "0");
+  assert.ok(
+    +(await page.inputValue("#end")) - +(await page.inputValue("#start")) <
+      transcriptSpan,
+  );
+  await page.setViewportSize({ width: 720, height: 1000 });
+  await page.screenshot({ path: "/tmp/phase-v2-mobile.png", fullPage: true });
+  assert.ok(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
   );
-  for (const m of collapsedMarkers)
-    assert.ok(
-      Math.abs(
-        m.pos -
-          (m.color === "#24865e" ? 1120 : m.color === "#3075bc" ? 1160 : 1200),
-      ) < 1e-6,
-    );
-
-  await page.locator("#pileup").click({ position: { x: 40, y: 120 } });
-  assert.equal(
-    await page.locator('#readTable tr[aria-expanded="true"]').count(),
-    1,
-  );
-  await page.click("#expandAll");
-  assert.match(await page.textContent("#rowCount"), /of 48/);
-  await page.locator("#pileup").focus();
-  await page.keyboard.press("End");
-  await page.waitForFunction(() =>
-    document.querySelector("#rowCount").textContent.includes("29–48"),
-  );
-  assert.match(await page.textContent("#readTable"), /Read 44/);
-  const expandedMarkers = await markerPositions();
-  assert.ok(expandedMarkers.some((m) => m.color === "#9c70b3"));
-  for (const m of expandedMarkers)
-    assert.ok(
-      Math.abs(
-        m.pos -
-          (m.color === "#24865e" ? 1120 : m.color === "#3075bc" ? 1160 : 1200),
-      ) < 1e-6,
-    );
-
-  await page.click("#collapseAll");
-  assert.match(await page.textContent("#rowCount"), /of 4/);
-  // A drag moves genomic content, while a click still expands its family.
-  await page.click("#zoomIn");
-  await page.locator("#pileup").scrollIntoViewIfNeeded();
-  const bounds = await page.locator("#pileup").boundingBox();
-  const expandedBefore = await page
-    .locator('#readTable tr[aria-expanded="true"]')
-    .count();
-  const rangeBefore = await page
-    .locator("#pileup")
-    .getAttribute("data-view-start");
-  await page.mouse.move(bounds.x + 350, bounds.y + 120);
-  await page.mouse.down();
-  await page.mouse.move(bounds.x + 250, bounds.y + 120, { steps: 8 });
-  await page.mouse.up();
-  const rangeAfterLeft = await page
-    .locator("#pileup")
-    .getAttribute("data-view-start");
-  assert.notEqual(rangeBefore, rangeAfterLeft, errors.join("\n"));
-  assert.equal(
-    await page.locator('#readTable tr[aria-expanded="true"]').count(),
-    expandedBefore,
-  );
-  await page.mouse.move(bounds.x + 250, bounds.y + 120);
-  await page.mouse.down();
-  await page.mouse.move(bounds.x + 350, bounds.y + 120, { steps: 8 });
-  await page.mouse.up();
-  assert.equal(
-    await page.locator("#pileup").getAttribute("data-view-start"),
-    rangeBefore,
-  );
-  assert.equal(
-    await page
-      .locator("#pileup")
-      .evaluate((c) => c.classList.contains("dragging")),
-    false,
-  );
-  await page.click("#fit");
-  await page.locator("#events button").first().click();
-  await page.waitForFunction(() =>
-    document.querySelector("#alignment").textContent.includes("Candidate"),
-  );
-  await page.screenshot({ path: "/tmp/phase-synthetic.png", fullPage: true });
-  await page.locator("#variantEntry > summary").click();
-  await page.fill(
-    "#variantText",
-    "synthetic:1121C>A\nsynthetic:g.1161G>C\nc.1A>T",
-  );
-  await page.click("#checkVariants");
-  await page.waitForFunction(() =>
-    document.querySelector("#requestedMatrix").textContent.includes("Cis"),
-  );
-  assert.match(
-    await page.textContent("#requestedVariants"),
-    /Select a transcript/,
-  );
-  await page.locator("#requestedMatrix button").first().click();
-  assert.match(await page.textContent("#requestedEvidence"), /Both ALT: 24/);
-  assert.match(await page.textContent("#requestedEvidence"), /Cis supported/);
-  await page.locator("#requestedVariants button").first().click();
-  assert.equal(
-    await page.locator("#pileup").getAttribute("data-view-start"),
-    "1070",
-  );
-  await page.click("#clear");
-  assert.equal(await page.locator("#workspace").isVisible(), false);
-  for (const [id, name] of [
-    ["bam", "synthetic.bam"],
-    ["index", "synthetic.bai"],
-    ["reference", "synthetic.fa"],
-    ["fai", "synthetic.fa.fai"],
-  ])
-    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
-  await page.check("#confirm");
-  await page.click("#open");
-  await page.waitForFunction(() =>
-    document.querySelector("#status").textContent.startsWith("Files open"),
-  );
-  await page.fill("#region", "synthetic:1001-1800");
-  await page.click("#run");
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector("#status")
-        .textContent.includes("eligible fragments analyzed"),
-    { timeout: 20000 },
-  );
-  assert.match(await page.textContent("#metrics"), /44/);
-  assert.match(await page.textContent("#events"), /duplication/);
-  await page.click("#clear");
-  for (const [id, name] of [
-    ["bam", "synthetic.bam"],
-    ["index", "synthetic.csi"],
-    ["reference", "synthetic.2bit"],
-  ])
-    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
-  await page.check("#confirm");
-  await page.click("#open");
-  await page.waitForFunction(() =>
-    document.querySelector("#status").textContent.startsWith("Files open"),
-  );
-  await page.fill("#region", "synthetic:1001-1800");
-  await page.click("#run");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("eligible fragments analyzed"),
-  );
-  assert.match(await page.textContent("#metrics"), /44/);
-  await page.fill("#gene", "TP53");
-  await page.click("#lookup");
-  assert.match(await page.inputValue("#region"), /^chr17:/);
-  await page.click("#clear");
-  for (const [id, name] of [
-    ["bam", "paired.bam"],
-    ["index", "paired.bai"],
-    ["reference", "paired.fa"],
-    ["fai", "paired.fa.fai"],
-  ])
-    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
-  await page.check("#confirm");
-  await page.click("#open");
-  await page.waitForFunction(() =>
-    document.querySelector("#status").textContent.startsWith("Files open"),
-  );
-  await page.fill("#region", "synthetic:1001-1800");
-  await page.click("#run");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("eligible fragments analyzed"),
-  );
-  assert.match(await page.textContent("#rowCount"), /1 group rows in view/);
-  assert.match(
-    await page.textContent("#rowCount"),
-    /12 total fragments \/ 24 records retained/,
-  );
-  await page.click("#expandAll");
-  assert.match(await page.textContent("#readTable"), /Pair/);
-  assert.match(await page.textContent("#readTable"), /50M \/ 50M/);
-  await page.fill("#region", "synthetic:1051-1110");
-  await page.click("#run");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("eligible fragments analyzed"),
-  );
-  assert.match(
-    await page.textContent("#rowCount"),
-    /12 total fragments \/ 24 records retained/,
-  );
-  await page.click("#clear");
-  for (const [id, name] of [
-    ["bam", "structural.bam"],
-    ["index", "structural.bai"],
-    ["reference", "structural.fa"],
-    ["fai", "structural.fa.fai"],
-  ])
-    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
-  await page.check("#confirm");
-  await page.click("#open");
-  await page.waitForFunction(() =>
-    document.querySelector("#status").textContent.startsWith("Files open"),
-  );
-  await page.fill("#region", "synthetic:1001-1800");
-  await page.click("#run");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("eligible fragments analyzed"),
-  );
-  assert.match(
-    await page.textContent("#structural"),
-    /Possible translocation · split alignment/,
-  );
-  assert.match(
-    await page.textContent("#structural"),
-    /Inversion-like split alignment/,
-  );
-  assert.match(
-    await page.textContent("#structural"),
-    /mate on another chromosome/,
-  );
-  assert.match(await page.textContent("#structural"), /chr8:5001/);
-  await page.locator("#structural summary").first().click();
-  await page.locator("#structural button").first().click();
-  assert.match(
-    await page.textContent("#structural"),
-    /offline assembly catalog/,
-  );
-  await page.click("#clear");
-  for (const [id, name] of [
-    ["bam", "noisy.bam"],
-    ["index", "noisy.bai"],
-    ["reference", "noisy.fa"],
-    ["fai", "noisy.fa.fai"],
-  ])
-    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
-  await page.check("#confirm");
-  await page.click("#open");
-  await page.waitForFunction(() =>
-    document.querySelector("#status").textContent.startsWith("Files open"),
-  );
-  await page.fill("#region", "synthetic:1001-1800");
-  await page.click("#run");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("eligible fragments analyzed"),
-  );
-  const strictRows = Number(
-    (await page.textContent("#rowCount")).match(/^(\d+) group rows/)[1],
-  );
-  assert.ok(strictRows > 1 && strictRows <= 200);
-  assert.match(
-    await page.textContent("#rowCount"),
-    /200 total fragments \/ 200 records retained/,
-  );
-  await page.selectOption("#detail", "families");
-  assert.match(await page.textContent("#rowCount"), /200 families in view/);
-  await page.selectOption("#detail", "overview");
-  assert.match(
-    await page.textContent("#rowCount"),
-    new RegExp("^" + strictRows + " group rows"),
-  );
-  await page.click("#expandAll");
-  assert.match(
-    await page.textContent("#rowCount"),
-    new RegExp("of " + (200 + strictRows) + " ·"),
-  );
-  await page.locator("#pileup").focus();
-  await page.keyboard.press("End");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#rowCount")
-      .textContent.match(/rows \d+–(\d+) of \1/),
-  );
-  assert.match(await page.textContent("#readTable"), /Read/);
-  await page.click("#collapseAll");
-  assert.match(
-    await page.textContent("#rowCount"),
-    new RegExp("of " + strictRows + " ·"),
-  );
-  await page.click("#clear");
-  for (const [id, name] of [
-    ["bam", "record-compatibility.bam"],
-    ["index", "record-compatibility.bai"],
-    ["reference", "record-compatibility.2bit"],
-  ])
-    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
-  await page.check("#confirm");
-  await page.click("#open");
-  await page.waitForFunction(() =>
-    document.querySelector("#status").textContent.startsWith("Files open"),
-  );
-  await page.fill("#region", "synthetic:1001-1800");
-  await page.click("#run");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("eligible fragments analyzed"),
-  );
-  assert.match(await page.textContent("#status"), /44 eligible fragments/);
-  assert.match(await page.textContent("#status"), /3 missing-sequence/);
-  assert.match(await page.textContent("#status"), /1 unmapped/);
-  assert.match(await page.textContent("#status"), /1 missing-cigar/);
-  assert.match(
-    await page.textContent("#status"),
-    /1 inconsistent-sequence-length/,
-  );
-  assert.match(await page.textContent("#rowCount"), /50 records retained/);
-  await page.click("#expandAll");
-  await page.locator("#events button").first().click();
-  await page.waitForFunction(() =>
-    document.querySelector("#alignment").textContent.includes("Candidate"),
-  );
-  assert.deepEqual(errors, []);
   assert.deepEqual(network, []);
-  await page.reload();
-  assert.equal(await page.locator("#workspace").isVisible(), false);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(violations, []);
+  // The frozen version remains independently runnable at the requested URL.
+  await page.goto("file://" + resolve("archive/index.html"));
+  await page.click("#demo2");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("eligible fragments analyzed"),
+  );
+  assert.match(await page.textContent("#blockChips"), /B1: 3 groups/);
+  assert.deepEqual(network, []);
+  assert.deepEqual(errors, []);
   console.log(
-    "Standalone Chrome: synthetic demo, BAM/BAI+FASTA and BAM/CSI+two-bit queries, gene lookup, event alignment, reset/reload, no page errors or outbound requests passed",
+    "PASS: v2 file:// graph, multiple haplotypes, paired reads, scroll, pan, queries, GFA, indexed BAM/BAI/CSI, FASTA/2bit, missing SEQ, structural clues, reset, offline catalog, responsive layout, no network/CSP errors, and archived viewer.",
   );
 } finally {
   await browser.close();

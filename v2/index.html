@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!--CSP-->
+    <title>Phase · local clone viewer</title>
+    <!--STYLE-->
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="mark">P</span>
+        <div>
+          <h1>Phase <span>local clone viewer</span></h1>
+          <p>Assembly graph · fragment evidence · multiple local haplotypes</p>
+        </div>
+      </div>
+      <a href="archive/index.html">Open archived viewer ↗</a
+      ><span class="privacy">LOCAL FILES · RAM ONLY</span
+      ><button id="reset" class="quiet">Clear session</button>
+    </header>
+    <main>
+      <aside class="controls">
+        <div class="eyebrow">01 / INPUT</div>
+        <h2>Build from your reads</h2>
+        <p class="muted">
+          Indexed, coordinate-sorted short-read BAM. Reference is optional.
+        </p>
+        <label>BAM<input id="bam" type="file" accept=".bam" /></label
+        ><label
+          >BAI / CSI<input id="index" type="file" accept=".bai,.csi"
+        /></label>
+        <details>
+          <summary>Optional reference</summary>
+          <label
+            >2bit or uncompressed FASTA<input
+              id="reference"
+              type="file"
+              accept=".2bit,.fa,.fasta,.fna" /></label
+          ><label
+            >FASTA index (.fai)<input id="fai" type="file" accept=".fai"
+          /></label>
+          <p class="muted">
+            Used for annotation and HGVS resolution. It does not seed assembly.
+          </p>
+        </details>
+        <button id="open" class="primary">Open indexed BAM</button>
+        <label
+          >Synthetic scenario<select id="demo-kind">
+            <option value="simple">Three patterns + deletion block</option>
+            <option value="somatic">Ten branched somatic haplotypes</option>
+          </select></label
+        >
+        <div class="demo-row">
+          <button id="demo">Try synthetic example</button
+          ><label class="check"
+            ><input id="demo-ref" type="checkbox" checked />With
+            reference</label
+          >
+        </div>
+        <hr />
+        <div class="eyebrow">02 / LOCAL REGION</div>
+        <label
+          >Contig<input id="chr" list="contigs" placeholder="chr17" /><datalist
+            id="contigs"
+          ></datalist
+        ></label>
+        <div class="split">
+          <label
+            >Start (1-based)<input
+              id="start"
+              type="number"
+              min="1"
+              placeholder="7660000" /></label
+          ><label
+            >End (inclusive)<input
+              id="end"
+              type="number"
+              min="1"
+              placeholder="7690000"
+          /></label>
+        </div>
+        <details>
+          <summary>Find a gene / transcript</summary>
+          <label
+            >Offline catalog<select id="build">
+              <option>hg38</option>
+              <option>hg19</option>
+            </select></label
+          >
+          <div class="inline">
+            <input
+              id="gene"
+              placeholder="e.g. TP53"
+              aria-label="Gene symbol"
+            /><button id="find">Find</button>
+          </div>
+          <label
+            >Matching locus<select id="genes">
+              <option value="">Choose a gene</option>
+            </select></label
+          ><label
+            >Transcript<select id="transcript">
+              <option value="">Choose a transcript</option>
+            </select></label
+          >
+          <p class="muted">
+            Catalog coordinates must match your BAM assembly. Selecting a
+            transcript fills its genomic interval.
+          </p>
+          <label
+            >Target an exon<select id="exon">
+              <option value="">Whole transcript interval</option>
+            </select></label
+          >
+        </details>
+        <details>
+          <summary>Assembly & evidence settings</summary>
+          <div class="split">
+            <label
+              >k-mer length<select id="k">
+                <option>21</option>
+                <option selected>31</option>
+                <option>41</option>
+                <option>51</option>
+              </select></label
+            ><label
+              >Support (fragments)<input
+                id="support"
+                type="number"
+                min="1"
+                max="1000"
+                value="3"
+            /></label>
+          </div>
+          <div class="split">
+            <label
+              >Minimum MAPQ<input
+                id="mapq"
+                type="number"
+                min="0"
+                max="254"
+                value="20" /></label
+            ><label
+              >Minimum base quality<input
+                id="baseq"
+                type="number"
+                min="0"
+                max="93"
+                value="20"
+            /></label>
+          </div>
+          <label class="check"
+            ><input id="duplicates" type="checkbox" />Include duplicate-flagged
+            records in support</label
+          >
+          <p class="muted">
+            Low-support graph branches stay visible. Secondary, QC-failed and
+            unavailable sequences do not vote. Missing quality scores are
+            treated as unknown and accepted; MAPQ 255 is excluded.
+          </p>
+        </details>
+        <button id="run" class="primary" disabled>
+          Assemble selected region
+        </button>
+        <hr />
+        <div class="eyebrow">03 / VARIANTS OF INTEREST</div>
+        <label for="variants">One variant per line</label
+        ><textarea
+          id="variants"
+          rows="4"
+          placeholder="chr17:7674220G>A&#10;NM_000546.6:c.215C>G"
+        ></textarea
+        ><button id="query" disabled>Highlight & check linkage</button>
+        <p class="muted">
+          Genomic SNVs work without reference (REF unverified). HGVS c./g.,
+          indels and transcript coordinates require a reference.
+        </p>
+        <details class="help">
+          <summary>How to interpret this view</summary>
+          <p>
+            The graph is assembled from quality-eligible local read sequences,
+            including soft clips. Unitigs are compacted sequence segments.
+            Arrows record observed k-mer adjacency; loops can represent repeats
+            or duplications.
+          </p>
+          <p>
+            Suggested haplotypes are compatible, fragment-threaded allele
+            patterns within connected local evidence blocks. Missing sequence is
+            unknown. A contradictory SNP vetoes grouping, even below the support
+            threshold.
+          </p>
+          <p>
+            These are local sequence hypotheses, not a measured number of cancer
+            cell clones. Disconnected blocks, repeats, errors, allele-specific
+            coverage, copy number and PCR bias limit inference. A graph path
+            without read linkage is not counted as a clone.
+          </p>
+          <p>
+            Cis requires alleles observed on the same physical fragment.
+            Separate allele patterns are compatible with trans, but do not
+            establish trans in a mixture with unrestricted ploidy.
+          </p>
+          <p>
+            SA tags, supplementary alignments and mate metadata provide
+            inversion/translocation clues. Partner sequence is not assembled
+            remotely. Some complex topology will remain unresolved.
+          </p>
+          <p>
+            No upload, telemetry, persistence or downsampling. Limits fail
+            explicitly: 200 kb region, 100,000 records, 2 million bases, 200,000
+            oriented k-mers, 400,000 edges. Same-contig mate lookup is indexed
+            and bounded; off-contig partners remain metadata. Clear session
+            releases case data.
+          </p>
+        </details>
+      </aside>
+      <section class="workspace">
+        <div id="status" role="status" aria-live="polite">
+          Choose an indexed BAM, or explore the synthetic example.
+        </div>
+        <div id="metrics" class="metrics">
+          <span>Reference optional</span><span>No fixed ploidy</span
+          ><span>No read downsampling</span>
+        </div>
+        <section class="graph-card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">SEQUENCE ASSEMBLY</div>
+              <h2>Local reconstruction graph</h2>
+            </div>
+            <div class="tools">
+              <button id="fit">Fit graph</button
+              ><button id="zoomout" aria-label="Zoom out">−</button
+              ><button id="zoomin" aria-label="Zoom in">+</button
+              ><button id="gfa" disabled>Export GFA</button>
+            </div>
+          </div>
+          <div class="legend">
+            <span class="dot ref"></span>Reference-shared
+            <span class="dot alt"></span>Alternative / unannotated
+            <span class="dot weak"></span>Weak support · dashed
+            <span>Drag to pan · wheel to zoom · select a segment</span>
+          </div>
+          <canvas
+            id="graph"
+            height="440"
+            aria-label="Local assembly graph. Select segments using the segment list below."
+            tabindex="0"
+          ></canvas>
+          <div id="graph-note" class="footnote">
+            Topology layout, not a genomic coordinate axis. Both strands are
+            folded into oriented sequence segments.
+          </div>
+          <details>
+            <summary>Accessible segment list</summary>
+            <div id="segments" class="segment-list"></div>
+          </details>
+        </section>
+        <div class="lower">
+          <section class="paths-card">
+            <div class="section-head">
+              <div>
+                <div class="eyebrow">FRAGMENT-THREADED PATTERNS</div>
+                <h2>Suggested local haplotypes</h2>
+              </div>
+            </div>
+            <p class="muted">
+              Counts are per connected evidence block. Select a pattern to trace
+              its evidence through the graph.
+            </p>
+            <div id="blocks">
+              <div class="empty">
+                Assembly branches and their linkage will appear here.
+              </div>
+            </div>
+          </section>
+          <section class="inspector-card">
+            <div class="eyebrow">SELECTED EVIDENCE</div>
+            <h2 id="selection-title">Explore the reconstruction</h2>
+            <div id="inspection">
+              <p class="muted">
+                Select a graph segment or a suggested haplotype to inspect
+                sequence and paired reads.
+              </p>
+            </div>
+            <button id="expand" disabled>Expand contributing read pairs</button>
+          </section>
+        </div>
+        <section id="evidence" class="evidence-card" hidden>
+          <div class="section-head">
+            <div>
+              <h2>Paired read evidence</h2>
+              <p id="read-count" class="muted"></p>
+            </div>
+            <button id="allreads">Show all input records</button
+            ><button id="close-reads">Close reads</button>
+          </div>
+          <p class="footnote">
+            One row per fragment; ends share a coordinate axis. Scroll
+            vertically for all fragments. Drag a read row horizontally to move
+            along the locus. Colored bases are plotted from each record’s CIGAR;
+            insertions are purple triangles.
+          </p>
+          <div
+            id="reads"
+            tabindex="0"
+            aria-label="Scrollable paired read evidence"
+          ></div>
+        </section>
+        <section id="linkage" class="linkage-card" hidden>
+          <div class="eyebrow">REQUESTED VARIANTS</div>
+          <h2>Physical linkage</h2>
+          <div id="query-results"></div>
+        </section>
+        <details id="structural-panel" class="structural-card">
+          <summary id="structural-summary">Structural evidence</summary>
+          <div id="structural"></div>
+        </details>
+      </section>
+    </main>
+    <!--SCRIPT-->
+  </body>
+</html>
