@@ -137,6 +137,45 @@ try {
     await page.textContent("#rowCount"),
     /12 total fragments \/ 24 records retained/,
   );
+  await page.click("#clear");
+  for (const [id, name] of [
+    ["bam", "structural.bam"],
+    ["index", "structural.bai"],
+    ["reference", "structural.fa"],
+    ["fai", "structural.fa.fai"],
+  ])
+    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
+  await page.check("#confirm");
+  await page.click("#open");
+  await page.waitForFunction(() =>
+    document.querySelector("#status").textContent.startsWith("Files open"),
+  );
+  await page.fill("#region", "synthetic:1001-1800");
+  await page.click("#run");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("eligible fragments analyzed"),
+  );
+  assert.match(
+    await page.textContent("#structural"),
+    /Possible translocation · split alignment/,
+  );
+  assert.match(
+    await page.textContent("#structural"),
+    /Inversion-like split alignment/,
+  );
+  assert.match(
+    await page.textContent("#structural"),
+    /mate on another chromosome/,
+  );
+  assert.match(await page.textContent("#structural"), /chr8:5001/);
+  await page.locator("#structural summary").first().click();
+  await page.locator("#structural button").first().click();
+  assert.match(
+    await page.textContent("#structural"),
+    /offline assembly catalog/,
+  );
   assert.deepEqual(errors, []);
   assert.deepEqual(network, []);
   await page.reload();

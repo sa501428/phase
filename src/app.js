@@ -204,6 +204,7 @@ function clear() {
     "blocks",
     "variants",
     "events",
+    "structural",
     "readTable",
     "readDetail",
     "alignment",
@@ -483,7 +484,67 @@ function render() {
     $("events").append(
       el("p", "No supported insertion or deletion candidates."),
     );
+  renderStructural(r.structural);
   draw();
+}
+function renderStructural(structural) {
+  const panel = $("structural");
+  panel.replaceChildren();
+  for (const warning of structural?.warnings || [])
+    panel.append(el("p", warning, "muted"));
+  if (!structural?.events.length) {
+    panel.append(
+      el(
+        "p",
+        "No split-alignment or discordant-mate signals found in the available local records. Missing SA/mate metadata can limit detection.",
+        "muted",
+      ),
+    );
+    return;
+  }
+  for (const event of structural.events) {
+    const card = el("details", undefined, "block");
+    card.append(
+      el(
+        "summary",
+        `${event.type} · ${event.fragments} fragment${event.fragments === 1 ? "" : "s"} · ${event.partner.chr}:${event.partnerRange[0] + 1}`,
+      ),
+    );
+    card.append(
+      el(
+        "p",
+        `Local ${event.local.chr}:${event.localRange[0] + 1}–${event.localRange[1] + 1} (${event.local.strand}) → partner ${event.partner.chr}:${event.partnerRange[0] + 1}–${event.partnerRange[1] + 1} (${event.partner.strand}). Anchors clustered within ${structural.clusterTolerance} bp; mate-only coordinates are alignment starts, not exact breakpoints.`,
+      ),
+    );
+    card.append(
+      el(
+        "p",
+        `${event.eligibleFragments} fragments pass mapping-quality filters at both ends; ${event.localQualityFragments} pass local filters; ${event.unknownPartnerQuality} have unknown partner MAPQ; ${event.duplicateFragments} are duplicate-marked. Sources: ${event.sources.join(", ")}. Record IDs: ${event.records.map((id) => id + 1).join(", ")}.`,
+      ),
+    );
+    for (const note of event.notes) card.append(el("p", note, "muted"));
+    const button = el(
+        "button",
+        `Look up partner genes in ${$("assembly").value}`,
+      ),
+      description = el("p", undefined, "muted");
+    button.onclick = () => {
+      const matches = genes()
+        .filter(
+          (g) =>
+            g[1].replace(/^chr/, "") ===
+              event.partner.chr.replace(/^chr/, "") &&
+            g[3] < event.partner.end &&
+            g[4] > event.partner.start,
+        )
+        .map((g) => g[0]);
+      description.textContent = matches.length
+        ? `Partner alignment overlaps: ${[...new Set(matches)].join(", ")} (${$("assembly").value} catalog). Overlap alone does not establish a gene fusion.`
+        : "No overlapping gene in the selected offline assembly catalog. Verify the catalog matches your BAM reference.";
+    };
+    card.append(button, description);
+    panel.append(card);
+  }
 }
 function pair() {
   if (!data) return;
@@ -617,7 +678,11 @@ function draw() {
       row.type === "family"
         ? `${expandedFamilies.has(family.id) ? "▾" : "▸"} F${family.id + 1} ×${row.count}`
         : `  ${row.member.paired ? (row.member.matePresent ? "Pair" : "Single end") : "Read"} ${row.member.id + 1}`;
-    c.fillText(label, 6, y + 10);
+    c.fillText(
+      label + (family.structuralLinks?.length ? " · SV" : ""),
+      6,
+      y + 10,
+    );
     c.fillStyle = "#7d8e84";
     c.fillText(row.group.slice(0, 17), 6, y + 21);
     c.save();
@@ -719,7 +784,7 @@ function draw() {
       $("readDetail").textContent = member.readIds
         .map((id) => {
           const r = readIndex().get(id);
-          return `Read name (selected explicitly): ${r.name}\nStart: ${r.start + 1}\nCIGAR: ${r.cigar}\nFlags: ${r.flags}\nMate start: ${r.mate >= 0 ? r.mate + 1 : "unavailable"}\nSequence: ${r.seq}\nBase qualities: ${r.qual.join(",")}`;
+          return `Read name (selected explicitly): ${r.name}\nStart: ${r.start + 1}\nCIGAR: ${r.cigar}\nFlags: ${r.flags}\nMate: ${r.mateChr || "unknown contig"}:${r.mate >= 0 ? r.mate + 1 : "unavailable"}\nSA: ${r.sa || "not present"}\nSequence: ${r.seq}\nBase qualities: ${r.qual.join(",")}`;
         })
         .join("\n\n");
     };

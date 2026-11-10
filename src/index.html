@@ -200,7 +200,8 @@
             <span class="a">A</span><span class="c">C</span
             ><span class="g">G</span><span class="t">T</span
             ><span>Gray = reference match</span><span>Purple = insertion</span
-            ><span>Line = deletion</span><span>Outline = excluded</span>
+            ><span>Line = deletion</span><span>Outline = excluded</span
+            ><span>SV = split/mate evidence</span>
           </div>
           <div id="canvasWrap">
             <canvas
@@ -258,6 +259,14 @@
               estimate.
             </p>
             <div id="events"></div>
+            <h3>Split alignments and discordant mates</h3>
+            <p class="muted">
+              Local evidence only: possible translocations, inversion-like
+              alignments, and distant partners. Partner coordinates come from
+              BAM metadata; remote reference sequence is not loaded. Same-strand
+              mate clues depend on library orientation.
+            </p>
+            <div id="structural"></div>
             <div id="expanded" hidden>
               <h3 id="eventTitle"></h3>
               <pre id="alignment"></pre>

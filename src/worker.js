@@ -1,3 +1,4 @@
+import { structuralEvidence } from "./structural.js";
 import { completePairs } from "./mates.js";
 import { buildFamilies } from "./families.js";
 import { BamFile } from "@gmod/bam";
@@ -21,6 +22,7 @@ self.onmessage = async ({ data: m }) => {
         ...d,
         result: (() => {
           const r = phase(d.reads, d.reference, d.region.start, m.opts);
+          r.structural = structuralEvidence(r.reads, d.region, m.opts);
           r.families = buildFamilies(r, d.reference, d.region.start, m.opts);
           return r;
         })(),
@@ -129,6 +131,11 @@ self.onmessage = async ({ data: m }) => {
           sample: rgSample.get(rg) || "",
           mate: r.next_pos,
           mateRef: r.next_refid,
+          chr: dict[r.ref_id]?.refName || region.chr,
+          mateChr: dict[r.next_refid]?.refName,
+          sa: r.getTag("SA"),
+          mateCigar: r.getTag("MC"),
+          mateMq: r.getTag("MQ"),
         };
       });
       send("progress", {
@@ -162,6 +169,7 @@ self.onmessage = async ({ data: m }) => {
         }
       }
       const result = phase(reads, reference, region.start, opts, supplied);
+      result.structural = structuralEvidence(result.reads, region, opts);
       result.families = buildFamilies(result, reference, region.start, opts);
       send("result", { result, reference, region, request: m.request });
     } else if (m.type === "event") {

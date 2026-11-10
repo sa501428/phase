@@ -147,6 +147,9 @@ export function buildFamilies(result, reference, origin, opts) {
       snps.map(([k]) => k),
       eventIDs,
       clipIDs,
+      [...new Set(reads.flatMap((r) => r.structuralLinks || []))].sort(
+        (a, b) => a - b,
+      ),
       observed,
       blockScope.length
         ? blockScope
@@ -216,6 +219,13 @@ export function buildFamilies(result, reference, origin, opts) {
       groups: [...f.groups].sort(),
       count: f.members.length,
       recordCount: f.members.reduce((n, m) => n + m.readIds.length, 0),
+      structuralLinks: [
+        ...new Set(
+          f.members.flatMap((m) =>
+            m.readIds.flatMap((id) => result.reads[id]?.structuralLinks || []),
+          ),
+        ),
+      ],
     };
   });
 }

@@ -18,16 +18,17 @@ export function bgzf(bytes) {
 }
 export function fixture(d = synthetic()) {
   const reference = "N".repeat(1000) + d.reference;
+  const contigs = [["synthetic", 1800], ...(d.extraContigs || [])];
   const text =
-    "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:synthetic\tLN:1800\n@RG\tID:synthetic\tSM:synthetic\n";
+    "@HD\tVN:1.6\tSO:coordinate\n" +
+    contigs.map(([n, l]) => `@SQ\tSN:${n}\tLN:${l}\n`).join("") +
+    "@RG\tID:synthetic\tSM:synthetic\n";
   const h = Buffer.concat([
     Buffer.from("BAM\x01"),
     i32(Buffer.byteLength(text)),
     Buffer.from(text),
-    i32(1),
-    i32(10),
-    str("synthetic"),
-    i32(1800),
+    i32(contigs.length),
+    ...contigs.flatMap(([n, l]) => [i32(n.length + 1), str(n), i32(l)]),
   ]);
   let pos = h.length;
   const records = [];
@@ -47,7 +48,7 @@ export function fixture(d = synthetic()) {
     fixed.writeUInt32LE(4681 * 65536 + 60 * 256 + name.length, 8);
     fixed.writeUInt32LE(r.flags * 65536 + ops.length, 12);
     fixed.writeInt32LE(r.seq.length, 16);
-    fixed.writeInt32LE(r.mate >= 0 ? 0 : -1, 20);
+    fixed.writeInt32LE(r.mate >= 0 ? (r.mateRef ?? 0) : -1, 20);
     fixed.writeInt32LE(r.mate ?? -1, 24);
     const body = Buffer.concat([
       fixed,
@@ -56,6 +57,8 @@ export function fixture(d = synthetic()) {
       seq,
       Buffer.from(r.qual),
       Buffer.from("RGZsynthetic\0"),
+      ...(r.sa ? [Buffer.from("SAZ" + r.sa + "\0")] : []),
+      ...(r.mateMq !== undefined ? [Buffer.from("MQi"), i32(r.mateMq)] : []),
     ]);
     records.push(Buffer.concat([i32(body.length), body]));
     pos += body.length + 4;
@@ -74,7 +77,7 @@ export function fixture(d = synthetic()) {
     last = block1.length * 65536 + raw.length - cut;
   const bai = Buffer.concat([
     Buffer.from("BAI\x01"),
-    i32(1),
+    i32(contigs.length),
     i32(1),
     i32(4681),
     i32(1),
@@ -82,6 +85,7 @@ export function fixture(d = synthetic()) {
     v(last),
     i32(1),
     v(h.length),
+    ...contigs.slice(1).flatMap(() => [i32(0), i32(0)]),
   ]);
   const csi = bgzf(
     Buffer.concat([
@@ -89,13 +93,14 @@ export function fixture(d = synthetic()) {
       i32(14),
       i32(5),
       i32(0),
-      i32(1),
+      i32(contigs.length),
       i32(1),
       i32(4681),
       v(h.length),
       i32(1),
       v(h.length),
       v(last),
+      ...contigs.slice(1).map(() => i32(0)),
     ]),
   );
   const be = (n) => {
@@ -139,7 +144,7 @@ export function pairedFixture() {
     const a = 1050 + i,
       b = 1400 + i;
     for (const [start, mate, flags] of [
-      [a, b, 65],
+      [a, b, 97],
       [b, a, 145],
     ])
       d.reads.push({
@@ -159,11 +164,47 @@ export function pairedFixture() {
   }
   return fixture(d);
 }
+export function structuralFixture() {
+  const d = synthetic();
+  d.extraContigs = [["chr8", 2000000]];
+  d.reads = [];
+  for (let i = 0; i < 9; i++) {
+    const start = 1100 + i,
+      split = i < 6;
+    d.reads.push({
+      id: i,
+      name: "structural-" + i,
+      start,
+      end: start + (split ? 50 : 100),
+      seq: split
+        ? d.reference.slice(start - 1000, start - 950) +
+          d.reference.slice(300, 350)
+        : d.reference.slice(start - 1000, start - 900),
+      cigar: split ? "50M50S" : "100M",
+      flags: split ? 0 : 65,
+      qual: Array(100).fill(35),
+      mq: 60,
+      rg: "synthetic",
+      sample: "synthetic",
+      mate: split ? -1 : 7000,
+      mateRef: split ? -1 : 1,
+      mateMq: split ? undefined : 60,
+      sa:
+        i < 3
+          ? "chr8,5001,+,50S50M,60,0;"
+          : i < 6
+            ? "synthetic,1501,-,50M50S,60,0;"
+            : undefined,
+    });
+  }
+  return fixture(d);
+}
 if (process.argv[1]?.endsWith("fixtures.mjs")) {
   await mkdir("tests/fixtures", { recursive: true });
   for (const [name, data] of [
     ["synthetic", fixture()],
     ["paired", pairedFixture()],
+    ["structural", structuralFixture()],
   ])
     for (const [ext, b] of Object.entries(data))
       await writeFile(
