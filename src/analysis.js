@@ -3,18 +3,9 @@ import {
   mergeCalls,
   partitionCompatible,
 } from "./compatibility.js";
-export function cigarOps(cigar) {
-  const out = [...cigar.matchAll(/(\d+)([MIDNSHP=X])/g)].map((x) => [
-    +x[1],
-    x[2],
-  ]);
-  if (
-    out.map((x) => x.join("")).join("") !== cigar ||
-    out.some((x) => x[0] < 1 || x[0] > 1e7)
-  )
-    throw Error("Invalid CIGAR");
-  return out;
-}
+import { cigarOps } from "./cigar.js";
+export { cigarOps } from "./cigar.js";
+import { prepareRecord, hasSequence } from "./alignment-geometry.js";
 export function normalize(pos, ref, alt, sequence, origin) {
   while (ref.length && alt.length && ref.at(-1) === alt.at(-1)) {
     ref = ref.slice(0, -1);
@@ -37,6 +28,8 @@ export function normalize(pos, ref, alt, sequence, origin) {
   return { pos, ref, alt, id: `${pos}:${ref}>${alt}` };
 }
 export function project(read, reference, origin, minBQ) {
+  if (!hasSequence(read))
+    return { bases: new Map(), events: [], clips: [], segments: [] };
   let p = read.start,
     q = 0;
   const bases = new Map(),
@@ -161,7 +154,10 @@ export function fragments(reads, reference, origin, opts) {
   const map = new Map();
   let excluded = 0;
   for (const r of reads) {
+    prepareRecord(r);
     r.excluded =
+      r.sequenceUsable === false ||
+      r.alignmentUsable === false ||
       !!(r.flags & (4 | 256 | 512)) ||
       (!opts.duplicates && !!(r.flags & 1024)) ||
       r.mq === 255 ||
@@ -494,6 +490,11 @@ export function phase(reads, reference, origin, opts, supplied = []) {
   }
   return {
     variants,
+    recordIssues: reads.reduce((counts, r) => {
+      if (r.displayIssue)
+        counts[r.displayIssue] = (counts[r.displayIssue] || 0) + 1;
+      return counts;
+    }, {}),
     blocks,
     coverage: [...coverage],
     excluded,

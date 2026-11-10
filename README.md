@@ -65,6 +65,10 @@ Counts distinguish total supporting fragments, fragments passing both local/part
 
 The `structural.*` synthetic fixtures contain split-read translocation, inversion-like split alignment, and cross-chromosome mate examples with three fragments per signal. Select `synthetic:1001-1800`. These annotations are local supporting evidence, not genome-wide structural variant calls or reconstructed partner sequences.
 
+## Incomplete alignment records
+
+BAM may omit `SEQ` on mapped records, including secondary/supplementary records. A placed unmapped record can retain sequence while having no usable CIGAR. These records no longer abort a region: the viewer retains them for inspection, preserves valid alignment geometry as hollow outlines, and excludes unavailable bases from SNP, VAF, and phasing evidence. An unmapped or missing-CIGAR record is metadata-only, without an invented alignment. Genuinely inconsistent nonempty SEQ/CIGAR records are quarantined individually and counted in the status message; their bases are never shifted, padded, or truncated to force a match. Hard clipping consumes no stored SEQ; soft clipping does. The `record-compatibility.*` fixtures exercise these cases with BAM/BAI and two-bit input.
+
 ## Privacy
 
 All selected-file access and analysis happen in the browser. There are no uploads, runtime downloads, remote references, telemetry, saved preferences, automatic exports, or session persistence APIs. Scripts and styles are hash-authorized by CSP; connections, frames, forms, objects, and external assets are blocked. The dedicated Blob worker is terminated on reset/cancellation. Worker/network and actual standalone launch paths are included in browser checks. Read names are exposed only through explicit record inspection. Public reference catalogs are embedded; reference bases are selected locally every session.

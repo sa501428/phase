@@ -383,6 +383,39 @@ try {
     await page.textContent("#rowCount"),
     new RegExp("of " + strictRows + " ·"),
   );
+  await page.click("#clear");
+  for (const [id, name] of [
+    ["bam", "record-compatibility.bam"],
+    ["index", "record-compatibility.bai"],
+    ["reference", "record-compatibility.2bit"],
+  ])
+    await page.setInputFiles("#" + id, resolve("tests/fixtures/" + name));
+  await page.check("#confirm");
+  await page.click("#open");
+  await page.waitForFunction(() =>
+    document.querySelector("#status").textContent.startsWith("Files open"),
+  );
+  await page.fill("#region", "synthetic:1001-1800");
+  await page.click("#run");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("eligible fragments analyzed"),
+  );
+  assert.match(await page.textContent("#status"), /44 eligible fragments/);
+  assert.match(await page.textContent("#status"), /3 missing-sequence/);
+  assert.match(await page.textContent("#status"), /1 unmapped/);
+  assert.match(await page.textContent("#status"), /1 missing-cigar/);
+  assert.match(
+    await page.textContent("#status"),
+    /1 inconsistent-sequence-length/,
+  );
+  assert.match(await page.textContent("#rowCount"), /50 records retained/);
+  await page.click("#expandAll");
+  await page.locator("#events button").first().click();
+  await page.waitForFunction(() =>
+    document.querySelector("#alignment").textContent.includes("Candidate"),
+  );
   assert.deepEqual(errors, []);
   assert.deepEqual(network, []);
   await page.reload();

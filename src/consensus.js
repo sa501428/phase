@@ -1,5 +1,5 @@
 import { normalize } from "./analysis.js";
-import { alignmentRuns } from "./alignment-geometry.js";
+import { hasSequence, alignmentRuns } from "./alignment-geometry.js";
 // Summarize all members, counting overlapping mates once at each base.
 // Contradictory calls are flagged rather than replaced by a majority allele.
 export function consensusGeometry(members, byID, reference, origin, opts) {
@@ -7,6 +7,7 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
     votes = new Map(),
     events = new Map(),
     clips = new Map();
+  const unavailableSegments = [];
   const withinFragmentConflicts = new Map();
   const anyEligible = members.some((m) =>
     m.readIds.some((id) => !byID.get(id).excluded),
@@ -17,12 +18,13 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
       seenClips = new Map();
     for (const id of m.readIds) {
       const r = byID.get(id);
-      const vote = !r.excluded || !anyEligible;
+      const vote = hasSequence(r) && (!r.excluded || !anyEligible);
       for (const { op, length: n, refStart: p, queryStart: q } of alignmentRuns(
         r,
       )) {
         if ("M=X".includes(op)) {
-          segments.push([p, p + n]);
+          if (!hasSequence(r)) unavailableSegments.push([p, p + n]);
+          else segments.push([p, p + n]);
           if (vote)
             for (let j = 0; j < n; j++) {
               const pos = p + j,
@@ -104,6 +106,7 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
   }
   return {
     segments: merged,
+    unavailableSegments,
     conflicts: [
       ...new Map(
         [...conflicts, ...withinFragmentConflicts.values()].map((c) => [

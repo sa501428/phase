@@ -1,3 +1,4 @@
+import { hasSequence } from "./alignment-geometry.js";
 import { cigarOps, normalize } from "./analysis.js";
 
 // Display families never change analysis counts. Unknown/discordant evidence
@@ -51,6 +52,15 @@ export function buildFamilies(result, reference, origin, opts) {
     const rawCalls = new Map();
     const recordEvidence = [];
     for (const r of reads) {
+      if (
+        r.alignmentUsable === false ||
+        r.flags & 4 ||
+        !r.cigar ||
+        r.cigar === "*"
+      ) {
+        uncertain = true;
+        continue;
+      }
       if (r.start < origin || r.end > origin + reference.length)
         uncertain = true;
       const rSegments = [],
@@ -61,7 +71,7 @@ export function buildFamilies(result, reference, origin, opts) {
         if ("M=X".includes(op)) {
           segments.push([p, p + n]);
           rSegments.push([p, p + n]);
-          for (let i = 0; i < n; i++) {
+          for (let i = 0; hasSequence(r) && i < n; i++) {
             const pos = p + i,
               b = r.seq[q + i],
               ref = reference[pos - origin],
@@ -85,6 +95,11 @@ export function buildFamilies(result, reference, origin, opts) {
           p += n;
           q += n;
         } else if (op === "I" || op === "D") {
+          if (!hasSequence(r)) {
+            if (op === "I") q += n;
+            else p += n;
+            continue;
+          }
           const ref =
               op === "D" ? reference.slice(p - origin, p - origin + n) : "",
             alt = op === "I" ? r.seq.slice(q, q + n) : "";
@@ -94,11 +109,12 @@ export function buildFamilies(result, reference, origin, opts) {
           if (op === "I") q += n;
           else p += n;
         } else if (op === "S") {
-          clips.push({
-            pos: p,
-            seq: r.seq.slice(q, q + n),
-            side: q === 0 ? "left" : "right",
-          });
+          if (hasSequence(r))
+            clips.push({
+              pos: p,
+              seq: r.seq.slice(q, q + n),
+              side: q === 0 ? "left" : "right",
+            });
           q += n;
         } else if (op === "N") {
           events.push({ pos: p, op, length: n, id: `${p}:N:${n}` });
@@ -199,6 +215,7 @@ export function buildFamilies(result, reference, origin, opts) {
       readIds: reads.map((r) => r.id),
       start: Math.min(...reads.map((r) => r.start)),
       end: Math.max(...reads.map((r) => r.end)),
+      metadataOnly: !segments.length,
       paired: reads.some((r) => r.flags & 1),
       matePresent:
         reads.some((r) => r.flags & 64) && reads.some((r) => r.flags & 128),

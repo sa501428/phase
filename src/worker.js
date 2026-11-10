@@ -226,7 +226,12 @@ self.onmessage = async ({ data: m }) => {
     } else if (m.type === "event") {
       const path = eventPath(m.event, m.reference, m.origin);
       const supporting = m.reads.filter(
-        (r) => r.start < path.end && r.end > path.start,
+        (r) =>
+          r.alignmentUsable !== false &&
+          r.sequenceUsable !== false &&
+          !(r.flags & 4) &&
+          r.start < path.end &&
+          r.end > path.start,
       );
       const realigned = [];
       let cells = 0;

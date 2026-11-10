@@ -1,5 +1,5 @@
 import { partitionCompatible } from "./compatibility.js";
-import { alignmentRuns } from "./alignment-geometry.js";
+import { hasSequence, alignmentRuns } from "./alignment-geometry.js";
 // A compact view of inferred LOCAL groups. Partial/low-quality observations do
 // not create display rows merely because their endpoints or error bases differ.
 export function buildOverview(result, region, opts) {
@@ -80,7 +80,10 @@ export function buildOverview(result, region, opts) {
       buckets.get(key).members.push(m);
     }
     for (const m of templates) {
-      if (!m.segments.some(([s, e]) => s < scope.end && e > scope.start))
+      if (
+        !m.segments.some(([s, e]) => s < scope.end && e > scope.start) &&
+        !(m.metadataOnly && m.start < scope.end && m.end > scope.start)
+      )
         continue;
       const rr = m.readIds.map((id) => byID.get(id)),
         eligible = rr.some((r) => !r.excluded),
@@ -176,6 +179,7 @@ export function buildOverview(result, region, opts) {
         const calls = new Map();
         for (const id of m.readIds) {
           const r = byID.get(id);
+          if (!hasSequence(r)) continue;
           for (const run of alignmentRuns(r)) {
             if (!"M=X".includes(run.op)) continue;
             for (let i = 0; i < run.length; i++) {

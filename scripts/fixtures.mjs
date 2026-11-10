@@ -223,6 +223,82 @@ export function noisyFixture() {
   }
   return fixture(d);
 }
+export function recordCompatibilityFixture() {
+  const d = synthetic();
+  d.reads.push({
+    id: 44,
+    name: "omitted-primary",
+    start: 1050,
+    end: 1280,
+    cigar: "230M",
+    seq: "",
+    qual: [],
+    flags: 0,
+    mq: 60,
+    mate: -1,
+  });
+  d.reads.push({
+    id: 45,
+    name: "omitted-secondary",
+    start: 1050,
+    end: 1280,
+    cigar: "230M",
+    seq: "",
+    qual: [],
+    flags: 256,
+    mq: 60,
+    mate: -1,
+  });
+  d.reads.push({
+    id: 46,
+    name: "synthetic-0-0",
+    start: 1050,
+    end: 1280,
+    cigar: "230M",
+    seq: "",
+    qual: [],
+    flags: 2048,
+    mq: 60,
+    mate: -1,
+  });
+  d.reads.push({
+    id: 47,
+    name: "placed-unmapped",
+    start: 1050,
+    end: 1051,
+    cigar: "",
+    seq: "ACGT".repeat(20),
+    qual: Array(80).fill(35),
+    flags: 4,
+    mq: 0,
+    mate: -1,
+  });
+  d.reads.push({
+    id: 48,
+    name: "missing-cigar",
+    start: 1050,
+    end: 1051,
+    cigar: "",
+    seq: "A".repeat(30),
+    qual: Array(30).fill(35),
+    flags: 256,
+    mq: 60,
+    mate: -1,
+  });
+  d.reads.push({
+    id: 49,
+    name: "inconsistent-length",
+    start: 1050,
+    end: 1150,
+    cigar: "100M",
+    seq: "A".repeat(99),
+    qual: Array(99).fill(35),
+    flags: 256,
+    mq: 60,
+    mate: -1,
+  });
+  return fixture(d);
+}
 if (process.argv[1]?.endsWith("fixtures.mjs")) {
   await mkdir("tests/fixtures", { recursive: true });
   for (const [name, data] of [
@@ -230,6 +306,7 @@ if (process.argv[1]?.endsWith("fixtures.mjs")) {
     ["paired", pairedFixture()],
     ["structural", structuralFixture()],
     ["noisy", noisyFixture()],
+    ["record-compatibility", recordCompatibilityFixture()],
   ])
     for (const [ext, b] of Object.entries(data))
       await writeFile(

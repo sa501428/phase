@@ -172,7 +172,15 @@ function startWorker() {
       selected = null;
       render();
       status(
-        `${m.result.fragmentCount.toLocaleString()} eligible fragments analyzed. Complete within this interval; no phase inferred outside it. Original alignment records: ${m.result.reads.length.toLocaleString()}.`,
+        `${m.result.fragmentCount.toLocaleString()} eligible fragments analyzed. Complete within this interval; no phase inferred outside it. Original alignment records: ${m.result.reads.length.toLocaleString()}. ${
+          Object.keys(m.result.recordIssues || {}).length
+            ? "Records excluded from allele evidence (retained for inspection): " +
+              Object.entries(m.result.recordIssues)
+                .map(([kind, n]) => `${n} ${kind}`)
+                .join(", ") +
+              "."
+            : ""
+        }`,
       );
     }
     if (m.type === "event") {
@@ -953,6 +961,10 @@ function draw() {
       : "#b9cbbf";
     for (const [s, e] of glyph.segments)
       c.fillRect(x(s), y + 6, Math.max(1, (e - s) * scale), 10);
+    for (const [s, e] of glyph.unavailableSegments || []) {
+      c.strokeStyle = "#a79787";
+      c.strokeRect(x(s), y + 6, Math.max(1, (e - s) * scale), 10);
+    }
     for (const m of glyph.mismatches) {
       if (m.pos < view.start || m.pos >= view.end) continue;
       c.fillStyle = colors[m.base] || "#aaa";
@@ -1042,7 +1054,7 @@ function draw() {
       $("readDetail").textContent = member.readIds
         .map((id) => {
           const r = readIndex().get(id);
-          return `Read name (selected explicitly): ${r.name}\nStart: ${r.start + 1}\nCIGAR: ${r.cigar}\nFlags: ${r.flags}\nMate: ${r.mateChr || "unknown contig"}:${r.mate >= 0 ? r.mate + 1 : "unavailable"}\nSA: ${r.sa || "not present"}\nSequence: ${r.seq}\nBase qualities: ${r.qual.join(",")}`;
+          return `Read name (selected explicitly): ${r.name}\nStart: ${r.start + 1}\nCIGAR: ${r.cigar || "unavailable"}\nSequence/alignment status: ${r.displayIssue || "available"}\nFlags: ${r.flags}\nMate: ${r.mateChr || "unknown contig"}:${r.mate >= 0 ? r.mate + 1 : "unavailable"}\nSA: ${r.sa || "not present"}\nSequence: ${r.seq}\nBase qualities: ${r.qual.join(",")}`;
         })
         .join("\n\n");
     };
