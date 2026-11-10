@@ -1,4 +1,4 @@
-# Phase local haplotype viewer
+# Phase local clone viewer
 
 Open **[index.html](index.html)** directly in desktop Chrome or Edge. No installation, server, or internet connection is required. The release is a single self-contained HTML file at the top level of `phase/`. `npm run build` regenerates this file; `src/index.html` is its source template. Firefox has not been verified.
 

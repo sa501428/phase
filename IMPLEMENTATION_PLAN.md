@@ -1,4 +1,4 @@
-# Local BAM phasing viewer implementation plan
+# Phase local clone viewer implementation plan
 
 Draft dated November 10, 2026.
 
