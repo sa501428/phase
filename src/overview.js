@@ -65,6 +65,10 @@ export function buildOverview(result, region, opts) {
           groups: [label],
           scope: { start: scope.start, end: scope.end },
           blockID: block?.id,
+          haplotypeID:
+            category === "haplotype"
+              ? Number(key.match(/^H(\d+)/)?.[1])
+              : undefined,
           pattern,
           indices: block?.indices || [],
           members: [],

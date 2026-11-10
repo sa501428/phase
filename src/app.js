@@ -1,3 +1,4 @@
+import { setupHierarchy, groupColor } from "./tree-view.js";
 import { consensusGeometry } from "./consensus.js";
 import hg19 from "../references/hg19.js";
 import hg38 from "../references/hg38.js";
@@ -53,6 +54,37 @@ const colors = {
   T: "#cb575b",
   N: "#b4bdb6",
 };
+const hierarchyView = setupHierarchy({
+  getData: () => data,
+  onSelect: (blockID, groupID) => {
+    const group = data?.result.overview.find(
+      (f) => f.blockID === blockID && f.haplotypeID === groupID,
+    );
+    if (!group) return;
+    $("detail").value = "overview";
+    if (
+      group.scope &&
+      (group.scope.end <= view.start || group.scope.start >= view.end)
+    ) {
+      const b = data.result.hierarchy.find((b) => b.blockID === blockID),
+        span = view.end - view.start,
+        center = (b.start + b.end) / 2;
+      view.start = Math.max(
+        data.region.start,
+        Math.min(data.region.end - span, Math.floor(center - span / 2)),
+      );
+      view.end = view.start + span;
+    }
+    layoutCache = null;
+    const layout = visibleReads(),
+      index = layout.findIndex((row) => row.family.id === group.id);
+    if (index >= 0) {
+      $("readScroll").scrollTop = index * ROW_HEIGHT;
+      scrollOffset = $("readScroll").scrollTop;
+      draw();
+    }
+  },
+});
 function status(text, error = false) {
   $("status").textContent = text;
   $("status").className = error ? "error" : "";
@@ -164,6 +196,7 @@ function stop() {
   );
 }
 function clear() {
+  hierarchyView.clear();
   finishDrag(true);
   suppressFamilyClick = false;
   worker?.terminate();
@@ -224,6 +257,7 @@ function clear() {
   delete $("pileup").dataset.viewStart;
   delete $("pileup").dataset.viewEnd;
   $("rowCount").textContent = "";
+  $("pileup").removeAttribute("title");
   $("workspace").hidden = true;
   $("expanded").hidden = true;
   $("empty").hidden = false;
@@ -500,6 +534,7 @@ function render() {
       el("p", "No supported insertion or deletion candidates."),
     );
   renderStructural(r.structural);
+  hierarchyView.render();
   draw();
 }
 function renderStructural(structural) {
@@ -690,6 +725,13 @@ function draw() {
       family = row.family;
     c.fillStyle = row.type === "family" ? "#edf4ef" : "#fff";
     c.fillRect(0, y, width, ROW_HEIGHT - 1);
+    const stats = data.result.hierarchy
+      ?.find((b) => b.blockID === family.blockID)
+      ?.groups.find((g) => g.id === family.haplotypeID);
+    if (stats) {
+      c.fillStyle = groupColor(family.blockID, family.haplotypeID);
+      c.fillRect(0, y, 3, ROW_HEIGHT - 1);
+    }
     c.fillStyle = "#365f50";
     const label =
       row.type === "family"
@@ -702,7 +744,14 @@ function draw() {
       left - 12,
     );
     c.fillStyle = "#7d8e84";
-    c.fillText(row.group.slice(0, 17), 6, y + 21);
+    c.fillText(
+      stats
+        ? `${stats.fragments} assigned · ${(100 * (stats.assignedShare || 0)).toFixed(1)}%`
+        : row.group.slice(0, 17),
+      6,
+      y + 21,
+      left - 12,
+    );
     c.save();
     c.beginPath();
     c.rect(left, y, width - left - 20, ROW_HEIGHT);
@@ -995,6 +1044,27 @@ $("pileup").onpointercancel = (e) => {
 $("pileup").onlostpointercapture = (e) => {
   if (dragState?.id === e.pointerId) finishDrag(true);
 };
+$("pileup").addEventListener("pointermove", (e) => {
+  if (dragState || !data) return;
+  const y = e.clientY - $("pileup").getBoundingClientRect().top;
+  if (y < 110) {
+    $("pileup").removeAttribute("title");
+    return;
+  }
+  const row = visibleReads()[Math.floor((y - 110 + scrollOffset) / ROW_HEIGHT)];
+  if (!row) return;
+  const f = row.family;
+  if (f.blockID && f.haplotypeID) {
+    hierarchyView.showGroup(f.blockID, f.haplotypeID);
+    const b = data.result.hierarchy.find((b) => b.blockID === f.blockID),
+      g = b.groups.find((g) => g.id === f.haplotypeID);
+    $("pileup").title = hierarchyView.info(b, g);
+  } else {
+    const text = `${f.label || "Family"}: ${row.count} displayed fragments; ${f.excluded} excluded, ${f.duplicates} duplicate-marked. These records are not assigned to a unique supported haplotype. Expand to inspect every pair.`;
+    hierarchyView.showSummary(text);
+    $("pileup").title = text;
+  }
+});
 $("pileup").onclick = (e) => {
   if (suppressFamilyClick) {
     suppressFamilyClick = false;
@@ -1121,4 +1191,7 @@ $("pileup").onkeydown = (e) => {
     else zoom(e.key === "+" ? 0.5 : 2);
   }
 };
-new ResizeObserver(() => draw()).observe($("canvasWrap"));
+new ResizeObserver(() => {
+  draw();
+  hierarchyView.draw();
+}).observe($("canvasWrap"));

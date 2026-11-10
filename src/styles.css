@@ -461,3 +461,76 @@ footer span {
 #pileup.dragging {
   cursor: grabbing;
 }
+
+.pileup-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+#hierarchyPanel {
+  margin: 0;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #d3dfd7;
+  border-radius: 6px;
+  min-width: 0;
+}
+#hierarchyPanel h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+#hierarchyPanel label {
+  margin: 10px 0;
+}
+#hierarchyPanel output {
+  display: block;
+  color: #839189;
+  font-weight: 400;
+  margin-top: 5px;
+}
+#treeSummary {
+  font-size: 12px;
+  line-height: 1.6;
+}
+#groupInfo {
+  font-size: 11px;
+  line-height: 1.7;
+  border-top: 1px solid #dbe6de;
+  padding-top: 10px;
+  white-space: pre-line;
+}
+.block-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.block-chips button {
+  padding: 4px 7px;
+  font-size: 10px;
+}
+.block-chips button.selected {
+  background: #d9ebdf;
+  border-color: #7da58b;
+}
+#treeCanvas {
+  margin-top: 8px;
+  cursor: pointer;
+}
+@media (max-width: 1250px) {
+  .pileup-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #hierarchyPanel {
+    max-height: 330px;
+  }
+}
+
+.tree-scroll {
+  max-height: 260px;
+  overflow: auto;
+}
+#groupInfo {
+  max-height: 180px;
+  overflow: auto;
+}

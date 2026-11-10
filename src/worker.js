@@ -1,3 +1,4 @@
+import { buildHierarchy } from "./hierarchy.js";
 import { buildOverview } from "./overview.js";
 import { structuralEvidence } from "./structural.js";
 import { completePairs } from "./mates.js";
@@ -27,6 +28,7 @@ self.onmessage = async ({ data: m }) => {
           r.families = buildFamilies(r, d.reference, d.region.start, m.opts);
           r.settings = m.opts;
           r.overview = buildOverview(r, d.region, m.opts);
+          r.hierarchy = buildHierarchy(r);
           return r;
         })(),
         request: m.request,
@@ -176,6 +178,7 @@ self.onmessage = async ({ data: m }) => {
       result.families = buildFamilies(result, reference, region.start, opts);
       result.settings = opts;
       result.overview = buildOverview(result, region, opts);
+      result.hierarchy = buildHierarchy(result);
       send("result", { result, reference, region, request: m.request });
     } else if (m.type === "event") {
       const path = eventPath(m.event, m.reference, m.origin);

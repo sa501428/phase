@@ -211,54 +211,98 @@
             ><span>Line = deletion</span><span>Outline = excluded</span
             ><span>SV = split/mate evidence</span>
           </div>
-          <div id="canvasWrap">
-            <canvas
-              id="pileup"
-              tabindex="0"
-              aria-label="Paired fragment pileup. Drag left/right to pan. Click a family to expand. Up and down scroll; left and right pan; plus and minus zoom."
-            ></canvas>
-            <div
-              id="readScroll"
-              tabindex="0"
-              aria-label="Scroll all fragment families vertically"
+          <div class="pileup-layout">
+            <section
+              id="hierarchyPanel"
+              aria-label="Exploratory SNP similarity hierarchy"
             >
-              <div id="readSpacer"></div>
+              <h3>Local group similarity</h3>
+              <div id="blockChips" class="block-chips"></div>
+              <label
+                >Phase block<select
+                  id="treeBlock"
+                  aria-label="Hierarchy phase block"
+                ></select
+              ></label>
+              <label
+                >Similarity cut <output id="cutLabel">25% SNP difference</output
+                ><input
+                  id="treeCut"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value="25"
+              /></label>
+              <div id="treeSummary" role="status"></div>
+              <div class="tree-scroll">
+                <canvas
+                  id="treeCanvas"
+                  tabindex="0"
+                  aria-label="SNP similarity dendrogram. Hover or click a group for counts and allele fractions."
+                ></canvas>
+              </div>
+              <p class="muted">
+                Exploratory SNP similarity, not ancestry. Unknown sites do not
+                count as matches; unlinked groups stay separate.
+              </p>
+              <div id="groupInfo" role="status" aria-live="polite">
+                Hover a group in either graph for fragment counts, allele
+                fractions, and shared SNPs.
+              </div>
+            </section>
+            <div id="canvasWrap">
+              <canvas
+                id="pileup"
+                tabindex="0"
+                aria-label="Paired fragment pileup. Drag left/right to pan. Click a group to expand. Hover for support and allele fractions. Up and down scroll; left and right pan; plus and minus zoom."
+              ></canvas>
+              <div
+                id="readScroll"
+                tabindex="0"
+                aria-label="Scroll all fragment groups vertically"
+              >
+                <div id="readSpacer"></div>
+              </div>
             </div>
           </div>
           <div class="rowpage">
             <span id="rowCount" aria-live="polite"></span>
           </div>
-          <div class="panels">
-            <section>
-              <h2>Local phase blocks</h2>
-              <p class="muted">
-                Groups are observed local allele patterns. They are not a tumor
-                clone count. Missing alleles remain unknown.
-              </p>
-              <div id="blocks"></div>
-            </section>
-            <section>
-              <h2>Variant linkage</h2>
-              <div class="pair">
-                <select id="v1" aria-label="First variant"></select
-                ><select id="v2" aria-label="Second variant"></select>
-              </div>
-              <div id="pairCounts"></div>
-              <div class="tablewrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Position</th>
-                      <th>Reference → alternate</th>
-                      <th>Support</th>
-                      <th>Evidence</th>
-                    </tr>
-                  </thead>
-                  <tbody id="variants"></tbody>
-                </table>
-              </div>
-            </section>
-          </div>
+          <details id="evidenceDetails">
+            <summary>Detailed phase and variant evidence</summary>
+            <div class="panels">
+              <section>
+                <h2>Local phase blocks</h2>
+                <p class="muted">
+                  Groups are observed local allele patterns. They are not a
+                  tumor clone count. Missing alleles remain unknown.
+                </p>
+                <div id="blocks"></div>
+              </section>
+              <section>
+                <h2>Variant linkage</h2>
+                <div class="pair">
+                  <select id="v1" aria-label="First variant"></select
+                  ><select id="v2" aria-label="Second variant"></select>
+                </div>
+                <div id="pairCounts"></div>
+                <div class="tablewrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Position</th>
+                        <th>Reference → alternate</th>
+                        <th>Support</th>
+                        <th>Evidence</th>
+                      </tr>
+                    </thead>
+                    <tbody id="variants"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </details>
           <section>
             <h2>Structural events and local alignment</h2>
             <p class="muted">

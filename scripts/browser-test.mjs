@@ -27,6 +27,39 @@ try {
   );
   assert.match(await page.textContent("#metrics"), /44/);
   assert.match(await page.textContent("#events"), /duplication/);
+  assert.match(await page.textContent("#blockChips"), /B1: 3 groups/);
+  assert.match(await page.textContent("#blockChips"), /B2: 1 groups/);
+  assert.match(
+    await page.textContent("#treeSummary"),
+    /3 supported groups → 2 similarity clusters/,
+  );
+  await page.locator("#treeCanvas").hover({ position: { x: 180, y: 35 } });
+  assert.match(
+    await page.textContent("#groupInfo"),
+    /12 assigned eligible fragments \/ 36/,
+  );
+  await page.locator("#treeCanvas").press("ArrowDown");
+  assert.match(await page.textContent("#groupInfo"), /24\/36 \(66.7%\)/);
+  await page.locator("#treeCut").focus();
+  await page.keyboard.press("End");
+  await page.locator("#treeCut").dispatchEvent("input");
+  assert.match(
+    await page.textContent("#treeSummary"),
+    /→ 1 similarity clusters/,
+  );
+  await page.selectOption("#treeBlock", "2");
+  assert.match(
+    await page.textContent("#treeSummary"),
+    /B2: 1 supported groups/,
+  );
+  await page.selectOption("#treeBlock", "1");
+  await page.locator("#treeCut").evaluate((e) => (e.value = "25"));
+  await page.locator("#treeCut").dispatchEvent("input");
+  assert.equal(
+    await page.locator("#evidenceDetails").getAttribute("open"),
+    null,
+  );
+
   assert.match(await page.textContent("#rowCount"), /4 group rows in view/);
   assert.equal(await page.locator("#collapse").isChecked(), true);
   assert.equal(await page.inputValue("#detail"), "overview");
