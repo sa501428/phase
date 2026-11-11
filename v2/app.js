@@ -1,3 +1,5 @@
+import { watchVaf } from "../src/live-vaf.js";
+import { hiddenBase, hiddenEvent } from "../src/vaf-filter.js";
 import { ungzip } from "pako";
 import hg19 from "../references/hg19.js";
 import hg38 from "../references/hg38.js";
@@ -41,6 +43,9 @@ function options() {
   const opts = Object.fromEntries(
     ["k", "support", "mapq", "baseq"].map((id) => [id, +$(id).value]),
   );
+  opts.minVaf = +$("minVaf").value / 100;
+  if (!Number.isFinite(opts.minVaf) || opts.minVaf < 0 || opts.minVaf > 1)
+    throw Error("Invalid VAF threshold");
   opts.duplicates = $("duplicates").checked;
   if (
     !Number.isInteger(opts.support) ||
@@ -123,6 +128,12 @@ function receive({ data: m }) {
     );
   }
   if (m.type === "result") {
+    const savedReads =
+      m.preserveView && readsOpen
+        ? readRows.flatMap((rr) => rr.map((r) => r.id))
+        : null;
+    const savedReadView = readView,
+      savedScroll = $("reads").scrollTop;
     result = m.result;
     selection = null;
     query = null;
@@ -167,7 +178,14 @@ function receive({ data: m }) {
     renderStructural();
     renderSegments();
     inspect(null);
-    fit();
+    if (m.preserveView) draw();
+    else fit();
+    if (savedReads) {
+      readView = savedReadView;
+      showReadIDs(savedReads);
+      $("reads").scrollTop = savedScroll;
+      drawReads();
+    }
   }
   if (m.type === "query") {
     query = m.query;
@@ -205,6 +223,15 @@ $("open").onclick = () => {
     status(e.message, true);
   }
 };
+watchVaf($("minVaf"), {
+  current: () => result?.settings.minVaf,
+  busy: () => busy,
+  update: (minVaf) => {
+    status("Updating visible variants from loaded reads…");
+    post({ type: "vaf", minVaf });
+  },
+  error: (e) => status(e.message, true),
+});
 $("demo").onclick = () => {
   try {
     if (!worker) startWorker();
@@ -479,6 +506,7 @@ function fit() {
   draw();
 }
 function draw() {
+  if (result) graph.dataset.minVaf = result.settings.minVaf;
   const { c, w, h } = resizeCanvas(graph, 440);
   c.fillStyle = "#fbfdfd";
   c.fillRect(0, 0, w, h);
@@ -1162,7 +1190,7 @@ function drawReads() {
                 ref =
                   result.reference?.[pos - result.region.start] ||
                   readBaseline.get(pos);
-              if (base && ref && base !== ref) {
+              if (base && ref && base !== ref && !hiddenBase(r, q + j)) {
                 c.fillStyle =
                   { A: "#289964", C: "#3987ce", G: "#d79526", T: "#d25a69" }[
                     base
@@ -1174,14 +1202,14 @@ function drawReads() {
                 }
               }
             }
-        } else if (op === "I") {
+        } else if (op === "I" && !hiddenEvent(r, op, p)) {
           c.fillStyle = "#9266bd";
           c.beginPath();
           c.moveTo(x(p), yy - 4);
           c.lineTo(x(p) - 4, yy - 10);
           c.lineTo(x(p) + 4, yy - 10);
           c.fill();
-        } else if (op === "D" || op === "N") {
+        } else if ((op === "D" || op === "N") && !hiddenEvent(r, op, p)) {
           c.strokeStyle = "#c66d76";
           c.beginPath();
           c.moveTo(x(p), yy + 3);

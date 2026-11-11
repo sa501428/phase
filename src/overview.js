@@ -1,3 +1,4 @@
+import { hiddenBase } from "./vaf-filter.js";
 import { partitionCompatible } from "./compatibility.js";
 import { hasSequence, alignmentRuns } from "./alignment-geometry.js";
 // A compact view of inferred LOCAL groups. Partial/low-quality observations do
@@ -185,6 +186,7 @@ export function buildOverview(result, region, opts) {
             for (let i = 0; i < run.length; i++) {
               const p = run.refStart + i,
                 b = r.seq[run.queryStart + i];
+              if (hiddenBase(r, run.queryStart + i)) continue;
               if (p < scope.start || p >= scope.end || !"ACGT".includes(b))
                 continue;
               const prev = calls.get(p);

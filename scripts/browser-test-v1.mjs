@@ -33,7 +33,8 @@ try {
       return original.call(this, x, y, w, h);
     };
   });
-  await page.goto("file://" + resolve("archive/index.html"));
+  await page.goto("file://" + resolve("automatic/index.html"));
+  assert.equal(await page.inputValue("#minVaf"), "2");
   await page.click("#demo2");
   await page.waitForFunction(
     () =>
@@ -349,6 +350,47 @@ try {
     document
       .querySelector("#status")
       .textContent.includes("eligible fragments analyzed"),
+  );
+  await page.selectOption("#detail", "families");
+  const filteredFamilies = Number(
+    (await page.textContent("#rowCount")).match(/^(\d+) families/)[1],
+  );
+  assert.ok(
+    filteredFamilies < 200,
+    "suppression removes rare SNP family distinctions",
+  );
+  await page.selectOption("#detail", "overview");
+  const filters = page
+    .locator("details")
+    .filter({ has: page.locator("#minVaf") });
+  if ((await filters.getAttribute("open")) === null)
+    await filters.locator(":scope > summary").click();
+  await page.fill("#minVaf", "5");
+  await page.waitForFunction(
+    () => document.querySelector("#pileup").dataset.minVaf === "0.05",
+  );
+  await page.selectOption("#detail", "families");
+  assert.match(await page.textContent("#rowCount"), /^1 families in view/);
+  assert.equal(
+    await page.evaluate(
+      () =>
+        (window.__pileupRects || []).filter(
+          (r) =>
+            r.h === 10 &&
+            ["#24865e", "#3075bc", "#aa8423", "#cb575b"].includes(r.color),
+        ).length,
+    ),
+    0,
+  );
+  await page.fill("#minVaf", "1");
+  await page.waitForFunction(
+    () => document.querySelector("#pileup").dataset.minVaf === "0.01",
+  );
+  assert.match(await page.textContent("#rowCount"), /200 families in view/);
+  await page.selectOption("#detail", "overview");
+  await page.fill("#minVaf", "0");
+  await page.waitForFunction(
+    () => document.querySelector("#pileup").dataset.minVaf === "0",
   );
   const strictRows = Number(
     (await page.textContent("#rowCount")).match(/^(\d+) group rows/)[1],

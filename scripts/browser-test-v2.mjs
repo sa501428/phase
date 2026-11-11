@@ -23,12 +23,13 @@ try {
   page.on("console", (m) => {
     if (m.type() === "error") violations.push(m.text());
   });
-  await page.goto("file://" + resolve("archive2/index.html"));
-  assert.equal(await page.title(), "Phase · local clone viewer");
+  await page.goto("file://" + resolve("assembly/index.html"));
+  assert.equal(await page.title(), "Phase · assembly");
   assert.equal(
     await page.getAttribute("header a", "href"),
-    "../archive/index.html",
+    "../automatic/index.html",
   );
+  assert.equal(await page.inputValue("#minVaf"), "2");
   await page.click("#demo");
   await page.waitForFunction(() =>
     document
@@ -105,10 +106,46 @@ try {
   assert.equal((await dl).suggestedFilename(), "phase-local-assembly.gfa");
   await page.selectOption("#demo-kind", "somatic");
   await page.click("#demo");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("353 input records retained"),
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("#status")
+        .textContent.includes("353 input records retained") &&
+      !document.querySelector("#demo").disabled,
+  );
+  assert.match(await page.textContent("#blocks"), /9 supported local patterns/);
+  const filters = page
+    .locator("details")
+    .filter({ has: page.locator("#minVaf") });
+  if ((await filters.getAttribute("open")) === null)
+    await filters.locator(":scope > summary").click();
+  await page.fill("#minVaf", "1");
+  await page.waitForFunction(
+    () => document.querySelector("#graph").dataset.minVaf === "0.01",
+  );
+  assert.match(
+    await page.textContent("#blocks"),
+    /10 supported local patterns/,
+  );
+  await page.locator(".path").first().click();
+  await page.click("#expand");
+  await page.click("#allreads");
+  const readStart = await page.getAttribute("#read-canvas", "data-view-start");
+  await page.fill("#minVaf", "5");
+  await page.waitForFunction(
+    () => document.querySelector("#graph").dataset.minVaf === "0.05",
+  );
+  assert.doesNotMatch(
+    await page.textContent("#blocks"),
+    /10 supported local patterns/,
+  );
+  assert.equal(
+    await page.getAttribute("#read-canvas", "data-view-start"),
+    readStart,
+  );
+  await page.fill("#minVaf", "0");
+  await page.waitForFunction(
+    () => document.querySelector("#graph").dataset.minVaf === "0",
   );
   assert.match(
     await page.textContent("#blocks"),
@@ -226,8 +263,8 @@ try {
   assert.deepEqual(network, []);
   assert.deepEqual(errors, []);
   assert.deepEqual(violations, []);
-  // The frozen version remains independently runnable at the requested URL.
-  await page.goto("file://" + resolve("archive/index.html"));
+  // The automatic grouping variant remains independently runnable.
+  await page.goto("file://" + resolve("automatic/index.html"));
   await page.click("#demo2");
   await page.waitForFunction(() =>
     document
@@ -238,7 +275,7 @@ try {
   assert.deepEqual(network, []);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: v2 file:// graph, multiple haplotypes, paired reads, scroll, pan, queries, GFA, indexed BAM/BAI/CSI, FASTA/2bit, missing SEQ, structural clues, reset, offline catalog, responsive layout, no network/CSP errors, and archived viewer.",
+    "PASS: v2 file:// graph, multiple haplotypes, paired reads, scroll, pan, queries, GFA, indexed BAM/BAI/CSI, FASTA/2bit, missing SEQ, structural clues, reset, offline catalog, responsive layout, no network/CSP errors, and automatic grouping viewer.",
   );
 } finally {
   await browser.close();

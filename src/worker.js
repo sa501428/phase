@@ -1,4 +1,8 @@
-import { resolveVariantLines, requestedPairs } from "./variant-input.js";
+import {
+  resolveVariantLines,
+  requestedPairs,
+  filterRequestedVariants,
+} from "./variant-input.js";
 import { buildHierarchy } from "./hierarchy.js";
 import { buildOverview } from "./overview.js";
 import { structuralEvidence } from "./structural.js";
@@ -15,7 +19,7 @@ import {
   eventPath,
   align,
 } from "./analysis.js";
-let bam, ref, dict, budget, files, header, lastContext;
+let bam, ref, dict, budget, files, header, lastContext, loaded;
 const send = (type, data) => postMessage({ type, ...data });
 self.onmessage = async ({ data: m }) => {
   try {
@@ -31,6 +35,13 @@ self.onmessage = async ({ data: m }) => {
             region: d.region,
             reference: d.reference,
           });
+          loaded = {
+            ...d,
+            opts: m.opts,
+            requested,
+            supplied: requested.filter((e) => e.variant).map((e) => e.variant),
+            diploid: m.diploid,
+          };
           const r = phase(
             d.reads,
             d.reference,
@@ -38,7 +49,7 @@ self.onmessage = async ({ data: m }) => {
             m.opts,
             requested.filter((e) => e.variant).map((e) => e.variant),
           );
-          r.requested = requested;
+          r.requested = filterRequestedVariants(requested, r);
           r.requestedPairs = requestedPairs(requested, r, {
             support: m.opts.support,
             diploid: m.diploid,
@@ -211,8 +222,17 @@ self.onmessage = async ({ data: m }) => {
       supplied.push(
         ...requested.filter((e) => e.variant).map((e) => e.variant),
       );
+      loaded = {
+        reads,
+        reference,
+        region,
+        opts,
+        supplied,
+        requested,
+        diploid: m.diploid,
+      };
       const result = phase(reads, reference, region.start, opts, supplied);
-      result.requested = requested;
+      result.requested = filterRequestedVariants(requested, result);
       result.requestedPairs = requestedPairs(requested, result, {
         support: opts.support,
         diploid: m.diploid,
@@ -223,6 +243,30 @@ self.onmessage = async ({ data: m }) => {
       result.overview = buildOverview(result, region, opts);
       result.hierarchy = buildHierarchy(result);
       send("result", { result, reference, region, request: m.request });
+    } else if (m.type === "vaf") {
+      if (!loaded) throw Error("Load a region first");
+      const { reads, reference, region, supplied, requested, diploid } = loaded;
+      const opts = { ...loaded.opts, minVaf: m.minVaf };
+      const result = phase(reads, reference, region.start, opts, supplied);
+      result.requested = filterRequestedVariants(requested, result);
+      result.requestedPairs = requestedPairs(requested, result, {
+        support: opts.support,
+        diploid,
+      });
+      result.structural = structuralEvidence(result.reads, region, opts);
+      result.families = buildFamilies(result, reference, region.start, opts);
+      result.settings = opts;
+      result.overview = buildOverview(result, region, opts);
+      result.hierarchy = buildHierarchy(result);
+      loaded.opts = opts;
+      lastContext.opts = opts;
+      send("result", {
+        result,
+        reference,
+        region,
+        request: m.request,
+        preserveView: true,
+      });
     } else if (m.type === "event") {
       const path = eventPath(m.event, m.reference, m.origin);
       const supporting = m.reads.filter(

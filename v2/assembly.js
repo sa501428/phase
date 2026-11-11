@@ -1,3 +1,4 @@
+import { applyVafFilter, hiddenBase } from "../src/vaf-filter.js";
 import { prepareRecord, alignmentRuns } from "../src/alignment-geometry.js";
 import { structuralEvidence } from "../src/structural.js";
 
@@ -20,6 +21,7 @@ const compatible = (a, b) => {
 // throughout construction and folded only for display, never counted twice.
 export function assemble(reads, region, reference = null, settings = {}) {
   const opts = {
+    minVaf: 0.02,
     k: 31,
     support: 3,
     mapq: 20,
@@ -34,6 +36,7 @@ export function assemble(reads, region, reference = null, settings = {}) {
     opts.k % 2 !== 1
   )
     throw Error("Choose an odd k between 15 and 61");
+  const vafFilter = applyVafFilter(reads, region, reference, opts);
   const { k } = opts,
     nodes = [],
     index = new Map(),
@@ -131,6 +134,7 @@ export function assemble(reads, region, reference = null, settings = {}) {
           coords[q] = p;
           if (p >= region.start && p < region.end) inScope[q] = 1;
           if (
+            hiddenBase(r, q) ||
             p < region.start ||
             p >= region.end ||
             !"ACGT".includes(b) ||
@@ -155,6 +159,7 @@ export function assemble(reads, region, reference = null, settings = {}) {
     for (let q = 0; q < r.seq.length; q++) {
       const b = r.seq[q];
       valid =
+        !r.vafAssemblyMask?.includes(q) &&
         inScope[q] &&
         "ACGT".includes(b) &&
         (!r.qual?.length || r.qual[q] >= opts.baseq)
@@ -195,7 +200,7 @@ export function assemble(reads, region, reference = null, settings = {}) {
     const id = fIndex.get(fragmentKey(r));
     if (id !== undefined) fragments[id].reads.push(r.id);
   }
-  if (!nodes.length)
+  if (!nodes.length && !vafFilter.suppressed)
     throw Error(
       "No quality-eligible sequence spans k bases. Lower k or quality thresholds, or choose another interval. All input records are retained.",
     );
@@ -294,7 +299,8 @@ export function assemble(reads, region, reference = null, settings = {}) {
   // never creates a haplotype. Searches are deliberately bounded; complex
   // repeats and nested branches stay visible as unresolved topology.
   const bubbles = [],
-    bubbleKeys = new Set();
+    bubbleKeys = new Set(),
+    suppressedGraphNodes = new Set();
   let complex = 0;
   for (const fork of nodes) {
     if (fork.out.size < 2 || fork.out.size > 4 || fork.fs.size < opts.support)
@@ -416,7 +422,17 @@ export function assemble(reads, region, reference = null, settings = {}) {
       a.isReference = bubble.referenceSequence
         ? a.seq === bubble.referenceSequence
         : null;
-    bubbles.push(bubble);
+    const callable = new Set(alleles.flatMap((a) => [...a.fs])).size;
+    bubble.alleles = alleles.filter(
+      (a) => a.isReference || !callable || a.fs.size / callable >= opts.minVaf,
+    );
+    for (const a of alleles)
+      if (!bubble.alleles.includes(a))
+        for (const n of a.diagnostic) suppressedGraphNodes.add(n);
+    bubble.alleles.forEach((a, i) => {
+      a.id = i;
+    });
+    if (bubble.alleles.length >= 2) bubbles.push(bubble);
   }
   // Sequence-varying alignment positions provide a strict contradiction veto
   // even for singleton/error branches too weak or complex to form a bubble.
@@ -542,11 +558,17 @@ export function assemble(reads, region, reference = null, settings = {}) {
       total: candidates.length,
     });
   }
+  const suppressedSegments = new Set(
+    [...suppressedGraphNodes].map((n) => loc.get(n).unitig),
+  );
+  const visibleSegments = unitigs.filter((u) => !suppressedSegments.has(u.id));
+  const visibleID = new Map(visibleSegments.map((u, i) => [u.id, i]));
   const structural = structuralEvidence(reads, region, opts);
   return {
     region,
     reference,
     settings: opts,
+    suppressedVariants: vafFilter.hiddenVariants,
     phaseLinks,
     reads,
     fragments: fragments.map((f) => ({
@@ -557,8 +579,14 @@ export function assemble(reads, region, reference = null, settings = {}) {
       features: [...f.features],
       conflict: f.conflict,
     })),
-    unitigs,
-    links,
+    unitigs: visibleSegments.map((u, id) => ({ ...u, id })),
+    links: links
+      .filter((e) => visibleID.has(e.from) && visibleID.has(e.to))
+      .map((e) => ({
+        ...e,
+        from: visibleID.get(e.from),
+        to: visibleID.get(e.to),
+      })),
     bubbles: bubbles.map((b) => ({
       ...b,
       callable: fragments.filter((f) => !f.conflict && f.features.has(b.id))
@@ -571,7 +599,13 @@ export function assemble(reads, region, reference = null, settings = {}) {
           (f) => !f.conflict && f.features.get(b.id) === a.id,
         ).length,
         fragments: [...a.fs],
-        unitigs: [...new Set(a.nodes.map((n) => loc.get(n).unitig))],
+        unitigs: [
+          ...new Set(
+            a.nodes
+              .map((n) => visibleID.get(loc.get(n).unitig))
+              .filter((id) => id !== undefined),
+          ),
+        ],
         isReference: a.isReference,
       })),
     })),
@@ -583,7 +617,8 @@ export function assemble(reads, region, reference = null, settings = {}) {
       fragments: fragments.length,
       orientedKmers: nodes.length,
       edges: edges.size,
-      weakUnitigs: unitigs.filter((u) => u.support < opts.support).length,
+      weakUnitigs: visibleSegments.filter((u) => u.support < opts.support)
+        .length,
       complex,
       unthreaded: fragments.filter((f) => !f.features.size).length,
       issues,

@@ -5,7 +5,14 @@ import { buildFamilies, layoutFamilies } from "../src/families.js";
 import { buildOverview } from "../src/overview.js";
 import { consensusGeometry } from "../src/consensus.js";
 import { synthetic } from "../src/demo.js";
-const opts = { mapq: 20, baseq: 20, support: 3, duplicates: false, sample: "" };
+const opts = {
+  minVaf: 0,
+  mapq: 20,
+  baseq: 20,
+  support: 3,
+  duplicates: false,
+  sample: "",
+};
 function read(id, start, seq, extra = {}) {
   return {
     id,

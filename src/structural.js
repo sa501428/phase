@@ -322,28 +322,70 @@ export function structuralEvidence(reads, region, opts) {
     warnings.push(
       `${invalidSA} malformed or oversized SA entries were ignored.`,
     );
-  const events = clusters.map((c) => ({
-    ...c,
-    fragments: new Set(c.observations.map((o) => o.fragment)).size,
-    eligibleFragments: new Set(
-      c.observations.filter((o) => o.eligible).map((o) => o.fragment),
-    ).size,
-    localQualityFragments: new Set(
-      c.observations.filter((o) => o.localOK).map((o) => o.fragment),
-    ).size,
-    unknownPartnerQuality: new Set(
-      c.observations
-        .filter((o) => o.partnerMapq === undefined || o.partnerMapq === 255)
-        .map((o) => o.fragment),
-    ).size,
-    duplicateFragments: new Set(
-      c.observations.filter((o) => o.duplicate).map((o) => o.fragment),
-    ).size,
-    records: [...new Set(c.observations.map((o) => o.record))],
-    notes: [...new Set(c.observations.map((o) => o.note))],
-    sources: [...new Set(c.observations.map((o) => o.source))],
-    observations: undefined,
-  }));
+  const byID = new Map(reads.map((r) => [r.id, r]));
+  const events = clusters
+    .map((c) => ({
+      ...c,
+      fragments: new Set(c.observations.map((o) => o.fragment)).size,
+      eligibleFragments: new Set(
+        c.observations.filter((o) => o.eligible).map((o) => o.fragment),
+      ).size,
+      localQualityFragments: new Set(
+        c.observations.filter((o) => o.localOK).map((o) => o.fragment),
+      ).size,
+      unknownPartnerQuality: new Set(
+        c.observations
+          .filter((o) => o.partnerMapq === undefined || o.partnerMapq === 255)
+          .map((o) => o.fragment),
+      ).size,
+      duplicateFragments: new Set(
+        c.observations.filter((o) => o.duplicate).map((o) => o.fragment),
+      ).size,
+      records: [...new Set(c.observations.map((o) => o.record))],
+      notes: [...new Set(c.observations.map((o) => o.note))],
+      sources: [...new Set(c.observations.map((o) => o.source))],
+      observations: undefined,
+    }))
+    .filter((e) => {
+      // Structural links are clues rather than resolved alleles. Apply the same
+      // threshold to their local-fragment evidence fraction, without querying a
+      // partner locus or claiming a cancer-cell fraction.
+      const covered = new Set(
+        e.records
+          .map((id) => byID.get(id))
+          .filter(Boolean)
+          .filter(
+            (r) =>
+              !(r.flags & (4 | 256 | 512)) &&
+              (opts.duplicates || !(r.flags & 1024)) &&
+              r.mq !== 255 &&
+              r.mq >= opts.mapq,
+          )
+          .map(identity),
+      );
+      for (const r of reads) {
+        if (
+          (r.chr || region.chr) !== region.chr ||
+          r.start > e.anchorLocal ||
+          r.end <= e.anchorLocal ||
+          r.flags & (4 | 256 | 512) ||
+          (!opts.duplicates && r.flags & 1024) ||
+          r.mq === 255 ||
+          r.mq < opts.mapq ||
+          (opts.sample && r.sample !== opts.sample)
+        )
+          continue;
+        covered.add(identity(r));
+      }
+      e.localCallableFragments = covered.size;
+      e.localEvidenceFraction = covered.size
+        ? e.localQualityFragments / covered.size
+        : null;
+      return (
+        e.localEvidenceFraction === null ||
+        e.localEvidenceFraction >= (opts.minVaf ?? 0.02)
+      );
+    });
   const fingerprint = new Map();
   for (const e of events)
     for (const id of e.records) {

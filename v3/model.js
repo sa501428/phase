@@ -1,3 +1,4 @@
+import { applyVafFilter, hiddenBase, hiddenEvent } from "../src/vaf-filter.js";
 import {
   prepareRecord,
   alignmentRuns,
@@ -37,6 +38,7 @@ export function recordEvidence(r, region, { baseq = 20, mapq = 20 } = {}) {
           pos < region.start ||
           pos >= region.end ||
           !good(q + j) ||
+          hiddenBase(r, q + j) ||
           !/[ACGT]/.test(b)
         )
           continue;
@@ -47,12 +49,13 @@ export function recordEvidence(r, region, { baseq = 20, mapq = 20 } = {}) {
       }
     else if (
       op === "I" &&
+      !hiddenEvent(r, op, p) &&
       p >= region.start &&
       p < region.end &&
       Array.from({ length: n }, (_, j) => good(q + j)).every(Boolean)
     )
       insertions.set(p, r.seq.slice(q, q + n));
-    else if (op === "D" && good(q - 1) && good(q))
+    else if (op === "D" && !hiddenEvent(r, op, p) && good(q - 1) && good(q))
       for (
         let pos = Math.max(p, region.start);
         pos < Math.min(p + n, region.end);
@@ -73,6 +76,7 @@ export class ManualWorkspace {
       baseq: 20,
       excludeHidden: true,
       includeDuplicates: false,
+      minVaf: 0.02,
     };
     this.hidden = new Set();
     this.groups = [];
@@ -114,8 +118,27 @@ export class ManualWorkspace {
     }
     this.fragmentByKey = byKey;
     this.owner = new Map();
+    this.updateVaf();
+  }
+  updateVaf() {
+    const active = new Set(
+      this.activeIDs(this.fragments.map((f) => f.id)).flatMap(
+        (id) => this.fragments[id].readIds,
+      ),
+    );
+    this.vafFilter = applyVafFilter(this.reads, this.region, this.reference, {
+      ...this.settings,
+      eligible: (r) => active.has(r.id),
+    });
   }
   setSettings(settings) {
+    if (
+      settings.minVaf !== undefined &&
+      (!Number.isFinite(settings.minVaf) ||
+        settings.minVaf < 0 ||
+        settings.minVaf > 1)
+    )
+      throw Error("Invalid minimum VAF");
     if (
       settings.includeDuplicates !== undefined &&
       typeof settings.includeDuplicates !== "boolean"
@@ -131,6 +154,7 @@ export class ManualWorkspace {
     this.settings = { ...this.settings, ...settings };
     this.cache.clear();
     this.groupCache.clear();
+    this.updateVaf();
   }
   snapshot() {
     return {
@@ -519,6 +543,8 @@ export class ManualWorkspace {
     const s = d.settings;
     if (
       !s ||
+      (s.minVaf !== undefined &&
+        (!Number.isFinite(s.minVaf) || s.minVaf < 0 || s.minVaf > 1)) ||
       !Number.isInteger(s.mapq) ||
       s.mapq < 0 ||
       s.mapq > 254 ||
@@ -546,6 +572,7 @@ export class ManualWorkspace {
       this.setSettings({
         ...s,
         includeDuplicates: s.includeDuplicates ?? false,
+        minVaf: s.minVaf ?? 0.02,
       });
     });
   }

@@ -1,3 +1,4 @@
+import { hiddenBase, hiddenEvent } from "./vaf-filter.js";
 import { hasSequence } from "./alignment-geometry.js";
 import { cigarOps, normalize } from "./analysis.js";
 
@@ -76,7 +77,7 @@ export function buildFamilies(result, reference, origin, opts) {
               b = r.seq[q + i],
               ref = reference[pos - origin],
               quality = r.qual[q + i];
-            if (!ref) continue;
+            if (!ref || hiddenBase(r, q + i)) continue;
             if ("ACGT".includes(b)) {
               if (rawCalls.has(pos) && rawCalls.get(pos) !== b)
                 conflictingSNP = true;
@@ -95,6 +96,11 @@ export function buildFamilies(result, reference, origin, opts) {
           p += n;
           q += n;
         } else if (op === "I" || op === "D") {
+          if (hiddenEvent(r, op, p)) {
+            if (op === "I") q += n;
+            else p += n;
+            continue;
+          }
           if (!hasSequence(r)) {
             if (op === "I") q += n;
             else p += n;

@@ -66,7 +66,7 @@ test("one private contradictory SNP cannot enter a group containing the opposite
     q = 1250 - r.start;
   r.seq =
     r.seq.slice(0, q) + (r.seq[q] === "A" ? "T" : "A") + r.seq.slice(q + 1);
-  const result = assemble(d.reads, d.region, null);
+  const result = assemble(d.reads, d.region, null, { minVaf: 0 });
   for (const b of result.blocks)
     for (const g of b.groups) {
       const calls = new Map();
@@ -231,7 +231,7 @@ test("repeat cycles remain in graph rather than being counted as extra clones", 
 test("ten somatic lineages of unequal abundance resolve without a clone-count or ploidy input", async () => {
   const { somaticDemo } = await import("../v2/somatic-demo.js"),
     d = somaticDemo(),
-    r = assemble(d.reads, d.region, null);
+    r = assemble(d.reads, d.region, null, { minVaf: 0 });
   assert.equal(r.blocks.length, 1);
   assert.equal(r.blocks[0].groups.filter((g) => g.supported).length, 10);
   assert.deepEqual(
@@ -245,13 +245,15 @@ test("ten somatic lineages of unequal abundance resolve without a clone-count or
     );
     assert.equal(names.size, 1, "never mix sibling or nested lineages");
   }
-  const withRef = assemble(structuredClone(d.reads), d.region, d.reference);
+  const withRef = assemble(structuredClone(d.reads), d.region, d.reference, {
+    minVaf: 0,
+  });
   assert.deepEqual(r.blocks, withRef.blocks);
 });
 test("conserved founder-only observations stay shared among related somatic subclones", async () => {
   const { somaticDemo } = await import("../v2/somatic-demo.js"),
     d = somaticDemo({ partials: true }),
-    r = assemble(d.reads, d.region, null),
+    r = assemble(d.reads, d.region, null, { minVaf: 0 }),
     b = r.blocks[0];
   assert.equal(b.groups.filter((g) => g.supported).length, 10);
   assert.equal(b.shared.length, 5);
@@ -327,7 +329,7 @@ test("a rare high-quality error in a ten-lineage mixture stays weak instead of c
     read.seq.slice(0, q) +
     (read.seq[q] === "A" ? "T" : "A") +
     read.seq.slice(q + 1);
-  const r = assemble(d.reads, d.region, null),
+  const r = assemble(d.reads, d.region, null, { minVaf: 0 }),
     groups = r.blocks.flatMap((b) => b.groups);
   assert.equal(groups.filter((g) => g.supported).length, 10);
   assert.ok(groups.some((g) => !g.supported && g.fragments.length === 1));

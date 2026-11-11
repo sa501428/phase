@@ -1,4 +1,4 @@
-> Historical assembly-version notes. The active viewer now uses manual read-pair assignments and an average-linkage SNP similarity display. The assembly implementation described below remains available at `archive2/index.html`; these are not claims about automatic inference in the manual workspace.
+> Historical assembly-version notes. The active viewer now uses manual read-pair assignments and an average-linkage SNP similarity display. The assembly implementation described below remains available at `assembly/index.html`; these are not claims about automatic inference in the manual workspace.
 
 # Local somatic assembly and phasing: algorithm notes
 

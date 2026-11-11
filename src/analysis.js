@@ -1,3 +1,4 @@
+import { applyVafFilter, hiddenBase, hiddenEvent } from "./vaf-filter.js";
 import {
   compatibleCalls,
   mergeCalls,
@@ -43,6 +44,7 @@ export function project(read, reference, origin, minBQ) {
         const b = read.seq[q + j],
           qual = read.qual?.[q + j];
         if (
+          !hiddenBase(read, q + j) &&
           b &&
           "ACGT".includes(b) &&
           qual !== undefined &&
@@ -61,6 +63,7 @@ export function project(read, reference, origin, minBQ) {
           ? Math.min(...read.qual.slice(q, q + n))
           : Math.min(read.qual[q - 1] ?? 0, read.qual[q] ?? 0);
       if (
+        !hiddenEvent(read, op, p) &&
         p >= origin &&
         p + (op === "D" ? n : 0) <= origin + reference.length &&
         qual >= minBQ &&
@@ -271,8 +274,19 @@ function allele(f, v) {
   return s;
 }
 export function phase(reads, reference, origin, opts, supplied = []) {
+  const vafFilter = applyVafFilter(
+    reads,
+    { start: origin, end: origin + reference.length },
+    reference,
+    opts,
+  );
+  const suppressedVariants = new Set(vafFilter.hiddenVariants);
   const { items: fs, excluded } = fragments(reads, reference, origin, opts),
-    candidate = new Map(supplied.map((v) => [v.id, { ...v, support: 0 }]));
+    candidate = new Map(
+      supplied
+        .filter((v) => !vafFilter.hiddenVariants.includes(v.id))
+        .map((v) => [v.id, { ...v, support: 0 }]),
+    );
   const counts = new Map();
   for (const f of fs) {
     const seen = new Map(f.events);
@@ -294,6 +308,21 @@ export function phase(reads, reference, origin, opts, supplied = []) {
       candidate.set(v.id, { ...v, supplied: candidate.has(v.id) });
   let variants = [...candidate.values()]
     .filter((v) => v.pos >= origin && v.pos < origin + reference.length)
+    .filter((v) => {
+      // Includes clip-derived and user-supplied candidates, so requesting a
+      // suppressed allele cannot silently reintroduce it into phasing.
+      let total = 0,
+        alt = 0;
+      for (const f of fs) {
+        const a = allele(f, v);
+        if (a === "?") continue;
+        total++;
+        if (a === (v.alt || "-")) alt++;
+      }
+      const retained = !total || alt / total >= (opts.minVaf ?? 0.02);
+      if (!retained) suppressedVariants.add(v.id);
+      return retained;
+    })
     .sort((a, b) => a.pos - b.pos || a.id.localeCompare(b.id));
   if (variants.length > 500)
     throw Error(
@@ -452,7 +481,12 @@ export function phase(reads, reference, origin, opts, supplied = []) {
     for (const p of f.bases.keys())
       if (p >= origin && p < origin + reference.length) coverage[p - origin]++;
   const events = [...counts.values()]
-    .filter((v) => v.ref.length !== v.alt.length && v.support >= opts.support)
+    .filter(
+      (v) =>
+        !suppressedVariants.has(v.id) &&
+        v.ref.length !== v.alt.length &&
+        v.support >= opts.support,
+    )
     .map((v) => {
       let type = v.ref.length ? "Deletion" : "Insertion";
       let source = null;
@@ -490,6 +524,8 @@ export function phase(reads, reference, origin, opts, supplied = []) {
   }
   return {
     variants,
+    suppressedVariants: [...suppressedVariants],
+    minimumVaf: opts.minVaf ?? 0.02,
     recordIssues: reads.reduce((counts, r) => {
       if (r.displayIssue)
         counts[r.displayIssue] = (counts[r.displayIssue] || 0) + 1;

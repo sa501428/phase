@@ -131,6 +131,13 @@ self.onmessage = async ({ data: m }) => {
       });
       result = assemble(reads, region, reference, m.opts);
       send("result", { result });
+    } else if (m.type === "vaf") {
+      if (!result) throw Error("Load a region first");
+      result = assemble(result.reads, result.region, result.reference, {
+        ...result.settings,
+        minVaf: m.minVaf,
+      });
+      send("result", { result, preserveView: true });
     } else if (m.type === "query") {
       if (!result) throw Error("Assemble a locus first");
       send("query", {

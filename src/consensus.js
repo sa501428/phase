@@ -1,3 +1,4 @@
+import { hiddenBase, hiddenEvent } from "./vaf-filter.js";
 import { normalize } from "./analysis.js";
 import { hasSequence, alignmentRuns } from "./alignment-geometry.js";
 // Summarize all members, counting overlapping mates once at each base.
@@ -31,6 +32,7 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
                 b = r.seq[q + j],
                 qual = r.qual[q + j];
               if (
+                hiddenBase(r, q + j) ||
                 pos < origin ||
                 pos >= origin + reference.length ||
                 qual === undefined ||
@@ -49,6 +51,7 @@ export function consensusGeometry(members, byID, reference, origin, opts) {
             qual =
               op === "I" ? r.qual.slice(q, q + n) : [r.qual[q - 1], r.qual[q]];
           if (
+            !hiddenEvent(r, op, p) &&
             vote &&
             p >= origin &&
             p + (op === "D" ? n : 0) <= origin + reference.length &&

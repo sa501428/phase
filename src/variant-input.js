@@ -340,3 +340,20 @@ export function requestedPairs(
     }
   return pairs;
 }
+
+// A requested coordinate is useful feedback, but suppressed alleles must not
+// be highlighted or participate in cis/trans comparisons.
+export function filterRequestedVariants(entries, result) {
+  const hidden = new Set(result.suppressedVariants || []);
+  return entries.map((e) =>
+    e.variant &&
+    (hidden.has(e.variant.id) ||
+      hidden.has(`${e.variant.pos}:>${e.variant.alt}`))
+      ? {
+          ...e,
+          variant: null,
+          error: `Suppressed below minimum VAF (${100 * (result.minimumVaf ?? result.settings?.minVaf ?? 0.02)}%). Lower the VAF threshold to include it.`,
+        }
+      : e,
+  );
+}

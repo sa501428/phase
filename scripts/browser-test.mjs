@@ -110,6 +110,7 @@ try {
     };
   });
   await page.goto("file://" + resolve("index.html"));
+  assert.equal(await page.inputValue("#minVaf"), "2");
   await page.setInputFiles("#bam", "/tmp/phase-packed-tests/packed.bam");
   await page.setInputFiles("#index", "/tmp/phase-packed-tests/packed.bai");
   await page.setInputFiles("#reference", "/tmp/phase-packed-tests/packed.2bit");
@@ -254,6 +255,36 @@ try {
     await page.mouse.click(p.screenX, p.screenY);
     if (shift) await page.keyboard.up("Shift");
   };
+  // Raising the cutoff hides the 1/2 insertion and removes its merge clash.
+  await page.click("#toggleInputs");
+  await page.fill("#minVaf", "75");
+  await page.waitForFunction(
+    () => document.querySelector("#pileup").dataset.minVaf === "0.75",
+  );
+  await page.click("#toggleInputs");
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  assert.ok(
+    !(await page.evaluate(() =>
+      window.__rects.some((r) => r.color === "#7618dc"),
+    )),
+  );
+  await clickPair("left");
+  await clickPair("overlap", true);
+  await page.click("#merge");
+  assert.match(await page.textContent("#counts"), /1 manual haplotypes/);
+  await page.click("#undo");
+  await page.click("#toggleInputs");
+  await page.fill("#minVaf", "2");
+  await page.waitForFunction(
+    () => document.querySelector("#pileup").dataset.minVaf === "0.02",
+  );
+  await page.click("#toggleInputs");
+  await clickPair("left");
+  await clickPair("overlap", true);
+  await page.click("#merge");
+  assert.match(await page.textContent("#status"), /contradictory insertion/);
+  assert.match(await page.textContent("#counts"), /0 manual haplotypes/);
+  await page.click("#clearSelection");
   await clickPair("left");
   await clickPair("right", true);
   assert.equal(await page.textContent("#selected"), "2 pairs selected");

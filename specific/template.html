@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!--CSP-->
+    <title>Phase / specific variants</title>
+    <!--STYLE-->
+  </head>
+  <body>
+    <header class="masthead">
+      <div>
+        <span class="brand">phase<span class="brand-dot">.</span></span
+        ><span class="edition">SPECIFIC VARIANTS</span>
+      </div>
+      <div class="privacy">
+        <span class="privacy-dot"></span> Local files · Memory only · Offline
+      </div>
+    </header>
+    <main>
+      <section class="intro">
+        <div class="eyebrow">READ-PAIR PHASING</div>
+        <h1>Your variants.<br /><span>The molecules between them.</span></h1>
+        <p>
+          Paste a variant list, open a BAM, and measure which alleles travel
+          together. Paired ends bridge the insert gap; qualifying helper SNPs
+          can extend a phase link.
+        </p>
+      </section>
+      <div class="workspace">
+        <section class="card inputs" aria-labelledby="input-title">
+          <div class="section-heading">
+            <span class="step">01</span>
+            <h2 id="input-title">Choose local alignments</h2>
+            <button id="clear" class="quiet push">Clear session</button>
+          </div>
+          <div class="file-grid">
+            <label class="file-field"
+              >Coordinate-sorted BAM<input
+                type="file"
+                id="bam"
+                accept=".bam" /></label
+            ><label class="file-field"
+              >Matching BAI / CSI<input
+                type="file"
+                id="index"
+                accept=".bai,.csi"
+            /></label>
+          </div>
+          <div class="file-actions">
+            <button id="open" class="secondary">Open files</button
+            ><label class="inline"
+              >Sample
+              <select id="sample" disabled>
+                <option value="">Open BAM first</option>
+              </select></label
+            ><span id="fileStatus" class="muted">No files opened</span>
+          </div>
+          <div class="divider"></div>
+          <div class="section-heading">
+            <span class="step">02</span>
+            <h2>Paste specific variants</h2>
+            <span class="muted push">One variant or table row per line</span>
+          </div>
+          <label for="variants" class="sr-only">Specific variants</label
+          ><textarea
+            id="variants"
+            rows="17"
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
+            placeholder="chr17:7674220C>T&#10;chr17 7674250 G A&#10;chr17:g.7674300_7674302del&#10;NM_000546.6:c.743G>A&#10;&#10;Or paste VCF rows, a CHR / POS / REF / ALT table,&#10;or a table with MAF column headers."
+          ></textarea>
+          <div class="entry-controls">
+            <label
+              >Transcript annotation
+              <select id="assembly">
+                <option value="hg38">GRCh38 / hg38</option>
+                <option value="hg19">GRCh37 / hg19</option>
+              </select></label
+            ><button id="parse" class="secondary">Check variant list</button
+            ><span id="parseSummary" class="muted"
+              >No fixed variant-count limit</span
+            >
+          </div>
+          <details class="formats">
+            <summary>Supported formats &amp; coordinate rules</summary>
+            <p>
+              All input coordinates are 1-based. Accepted:
+              <code>chr:posREF&gt;ALT</code>, <code>chr:pos:REF:ALT</code>,
+              <code>CHR POS REF ALT</code>, VCF, headed CSV/TSV and MAF, plus
+              exact DNA <code>g.</code> and transcript
+              <code>c.</code> substitutions, deletions, insertions, duplications
+              and delins. VCF multi-allelic rows are split. Identical normalized
+              alleles are counted once.
+            </p>
+            <p>
+              Use an explicit transcript accession for coding HGVS. Ambiguous
+              gene/transcript mappings, protein-only annotations, rs IDs,
+              symbolic alleles and uncertain coordinates are flagged. Choose the
+              assembly that matches your BAM; chromosome names or lengths cannot
+              verify its assembly. Tables with a header should be pasted as a
+              single table.
+            </p>
+            <p>
+              No reference genome is required. Supplied REF alleles are assumed,
+              not independently validated. Indels are assessed at the given
+              CIGAR coordinates; equivalent shifted events in repeats may be
+              missed. For HGVS deletions without sequence, “REF” means an intact
+              observed span. Sequence-free duplications require the copied
+              source and insertion to be observed on the same alignment.
+            </p>
+          </details>
+          <div id="parseResults" class="parse-results" hidden></div>
+          <div id="parsePager" class="pager" hidden></div>
+        </section>
+        <aside class="card settings" aria-labelledby="settings-title">
+          <div class="section-heading">
+            <span class="step">03</span>
+            <h2 id="settings-title">Evidence settings</h2>
+          </div>
+          <div class="quality-grid">
+            <label
+              >Minimum MAPQ<input
+                id="mapq"
+                type="number"
+                min="0"
+                max="254"
+                value="20" /></label
+            ><label
+              >Minimum base quality<input
+                id="baseq"
+                type="number"
+                min="0"
+                max="254"
+                value="20"
+            /></label>
+          </div>
+          <label
+            >Minimum variant VAF (%)<input
+              id="minVaf"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value="2"
+          /></label>
+          <p class="small muted">
+            Alleles below this threshold are hidden and excluded from phase
+            matching, clashes and helper links. Exactly 2% is included. Set 0 to
+            disable suppression, then rerun.
+          </p>
+          <label class="check"
+            ><input type="checkbox" id="duplicates" />Include duplicate-flagged
+            read pairs in direct counts</label
+          >
+          <p class="small muted">
+            Secondary, supplementary, QC-failed and unmapped records are
+            excluded. Missing base quality and MAPQ 255 are unknown. Overlapping
+            mates vote once; disagreements are excluded.
+          </p>
+          <div class="divider"></div>
+          <label class="check feature-check"
+            ><input type="checkbox" id="helpers" checked /><span
+              >Use helper SNPs <span class="badge helper">AUXILIARY</span></span
+            ></label
+          >
+          <p class="small">
+            Search around and between targets for biallelic SNP markers that can
+            connect phase blocks. Helpers are always highlighted in purple.
+          </p>
+          <div id="helperSettings">
+            <label
+              >Minimum unique molecules<input
+                id="helperSupport"
+                type="number"
+                min="5"
+                step="1"
+                value="5" /></label
+            ><label
+              >Minimum helper allele fraction (%)<input
+                id="helperFraction"
+                type="number"
+                min="0"
+                max="49.99"
+                step="0.1"
+                value="2" /></label
+            ><label
+              >Maximum gap to search (bp)<input
+                id="helperGap"
+                type="number"
+                min="0"
+                max="2000000"
+                step="1000"
+                value="50000" /></label
+            ><label
+              >Minimum link agreement (%)<input
+                id="linkAgreement"
+                type="number"
+                min="90"
+                max="100"
+                step="0.1"
+                value="95"
+            /></label>
+          </div>
+          <p class="small muted">
+            Helper support uses distinct fragment coordinates plus RX/UB tags
+            when present, with duplicate-flagged records excluded. This is a
+            conservative molecule proxy, not UMI consensus. Without a genome,
+            the modal base is the baseline; the nonmodal allele fraction must
+            exceed your threshold. Both alleles need minimum support. Each link
+            also needs support for both phase patterns.
+          </p>
+          <div class="run-actions">
+            <button id="run" class="primary" disabled>
+              Phase specific variants <span aria-hidden="true">→</span></button
+            ><button id="cancel" class="quiet" hidden>Cancel processing</button>
+          </div>
+          <p class="small muted">
+            Processing stays on this device. No uploads, network calls, browser
+            storage or saved sessions.
+          </p>
+        </aside>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite">
+        Open BAM/BAI and check your variant list to begin.
+      </div>
+      <section id="results" hidden>
+        <div class="result-heading">
+          <div>
+            <div class="eyebrow">FRAGMENT-LEVEL OBSERVATIONS</div>
+            <h2>Phase evidence</h2>
+          </div>
+          <span id="runSettings" class="small muted"></span>
+        </div>
+        <div id="summary" class="summary-grid"></div>
+        <p class="denominator">
+          <strong>Together frequency</strong> = both ALT ÷ (both ALT + A-only +
+          B-only). <strong>Separate frequency</strong> = (A-only + B-only) ÷ the
+          same denominator. Only fragments callable as REF/ALT at both sites
+          enter these frequencies. Neither-ALT, other alleles and conflicts are
+          reported separately. “Separate” describes observed patterns; it does
+          not establish trans phase in a tumor.
+        </p>
+        <div class="card result-card">
+          <div class="table-toolbar">
+            <h3>Requested variant pairs</h3>
+            <label class="push"
+              >Show
+              <select id="pairMode">
+                <option value="covered">Pairs with joint observations</option>
+                <option value="all">
+                  All requested pairs, including unresolved
+                </option>
+              </select></label
+            >
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Variant A / Variant B</th>
+                  <th>Together</th>
+                  <th>Separate</th>
+                  <th>Both ALT</th>
+                  <th>A only</th>
+                  <th>B only</th>
+                  <th>Neither</th>
+                  <th>Excluded</th>
+                  <th>Evidence</th>
+                </tr>
+              </thead>
+              <tbody id="pairRows"></tbody>
+            </table>
+          </div>
+          <div id="pairPager" class="pager"></div>
+        </div>
+        <div class="card inspect-card">
+          <div class="section-heading">
+            <h3>Inspect a pair</h3>
+            <span class="muted push">Select a row or choose any two sites</span>
+          </div>
+          <div class="pair-select">
+            <label>Variant A<select id="variantA"></select></label
+            ><label>Variant B<select id="variantB"></select></label
+            ><button id="inspect" class="secondary">View evidence</button>
+          </div>
+          <div id="pairDetail"></div>
+          <div id="pathDetail" class="path-detail" hidden></div>
+          <div id="evidence" hidden>
+            <h4>Contributing read pairs</h4>
+            <p class="small muted">
+              One row per template. R1 and R2 stay paired across the insert gap.
+              Bars share a genomic axis; dashed connectors show the unsequenced
+              insert. Coordinates are 1-based inclusive. Helper-link support
+              deduplicates coordinates / molecule tags; these rows show the
+              original templates.
+            </p>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Read pair</th>
+                    <th>R1 / R2 alignments</th>
+                    <th>A call</th>
+                    <th>B call</th>
+                  </tr>
+                </thead>
+                <tbody id="evidenceRows"></tbody>
+              </table>
+            </div>
+            <div id="evidencePager" class="pager"></div>
+          </div>
+        </div>
+        <div id="helpersPanel" class="card helpers-panel" hidden>
+          <div class="section-heading">
+            <h3>Qualifying helper SNPs</h3>
+            <span class="badge helper">AUXILIARY EVIDENCE</span>
+          </div>
+          <p class="small">
+            These markers were discovered locally. A marker is used for a
+            reported assisted link only when it appears in that link’s path. Its
+            baseline is the modal observed base, which may differ from the
+            genomic reference.
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Helper marker</th>
+                  <th>Unique ALT molecules</th>
+                  <th>Callable molecules</th>
+                  <th>Allele fraction</th>
+                  <th>Use in selected path</th>
+                </tr>
+              </thead>
+              <tbody id="helperRows"></tbody>
+            </table>
+          </div>
+          <div id="helperPager" class="pager"></div>
+        </div>
+        <p class="small muted final-note">
+          Direct frequencies are empirical fragment observations. Indirect
+          helper links report per-edge agreement and support, never a fabricated
+          end-to-end frequency. Complex mixtures, copy-number changes, alignment
+          artifacts and reference-free indel representation can limit
+          interpretation. Evidence is bounded explicitly; nothing is silently
+          downsampled.
+        </p>
+      </section>
+    </main>
+    <footer>
+      <span class="brand">phase.</span
+      ><span>Specific variants · Local analysis · No saved case data</span>
+    </footer>
+    <!--SCRIPT-->
+  </body>
+</html>

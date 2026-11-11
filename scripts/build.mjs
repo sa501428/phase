@@ -2,6 +2,18 @@ import { build } from "esbuild";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
+const targetVariant = process.argv[2] || "manual";
+const version =
+  { automatic: "src", assembly: "v2", manual: "v3" }[targetVariant] ||
+  targetVariant;
+if (!["src", "v2", "v3"].includes(version))
+  throw Error("Unknown viewer version");
+const output =
+  version === "src"
+    ? "automatic/index.html"
+    : version === "v2"
+      ? "assembly/index.html"
+      : "index.html";
 const plugins = [
   {
     name: "javascript-inflater",
@@ -13,7 +25,7 @@ const plugins = [
   },
 ];
 const worker = await build({
-  entryPoints: ["v3/worker.js"],
+  entryPoints: [`${version}/worker.js`],
   bundle: true,
   write: false,
   format: "iife",
@@ -23,7 +35,7 @@ const worker = await build({
   metafile: true,
 });
 const app = await build({
-  entryPoints: ["v3/app.js"],
+  entryPoints: [`${version}/app.js`],
   bundle: true,
   write: false,
   format: "iife",
@@ -33,12 +45,12 @@ const app = await build({
   metafile: true,
 });
 const js = app.outputFiles[0].text,
-  css = await readFile("v3/styles.css", "utf8");
+  css = await readFile(`${version}/styles.css`, "utf8");
 if (/WebAssembly\s*\.|\.wasm["']|instantiateStreaming/.test(js))
   throw Error("WASM in release bundle");
 const hash = (s) => createHash("sha256").update(s).digest("base64");
 const policy = `default-src 'none'; script-src 'sha256-${hash(js)}'; script-src-attr 'none'; style-src 'sha256-${hash(css)}'; style-src-attr 'none'; worker-src blob:; connect-src 'none'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'; manifest-src 'none'`;
-const html = (await readFile("v3/index.html", "utf8"))
+let html = (await readFile(`${version}/index.html`, "utf8"))
   .replace(
     "<!--CSP-->",
     `<meta http-equiv="Content-Security-Policy" content="${policy}">`,
@@ -51,12 +63,28 @@ const html = (await readFile("v3/index.html", "utf8"))
 // Reject embedded script terminators rather than hashing a transformed script.
 if (html.includes("<\\/script"))
   throw Error("Unexpected embedded script closing tag");
+if (version !== "v3")
+  html = html.replaceAll(
+    'href="automatic/index.html"',
+    'href="../automatic/index.html"',
+  );
 await mkdir("dist", { recursive: true });
-await writeFile("index.html", html);
-await writeFile(
-  "dist/SHA256SUMS",
-  `${createHash("sha256").update(html).digest("hex")}  ../index.html\n`,
-);
+await writeFile(output, html);
+const digest = createHash("sha256").update(html).digest("hex");
+if (version === "v3") {
+  await writeFile("dist/SHA256SUMS", `${digest}  ../index.html\n`);
+} else {
+  const manifest =
+    version === "src"
+      ? "automatic/v1-2026-11-10/SHA256SUMS"
+      : "assembly/SHA256SUMS";
+  const target = version === "src" ? "../index.html" : "index.html";
+  const lines = (await readFile(manifest, "utf8")).trimEnd().split("\n");
+  const entry = lines.findIndex((line) => line.endsWith(`  ${target}`));
+  if (entry < 0) throw Error("Missing variant release checksum");
+  lines[entry] = `${digest}  ${target}`;
+  await writeFile(manifest, lines.join("\n") + "\n");
+}
 await writeFile(
   "dist/build-inputs.json",
   JSON.stringify(
@@ -69,7 +97,7 @@ await writeFile(
   ),
 );
 console.log(
-  `Built index.html (${(html.length / 1024 / 1024).toFixed(1)} MiB), CSP hashes and checksum generated`,
+  `Built ${output} (${(html.length / 1024 / 1024).toFixed(1)} MiB), CSP hashes and checksum generated`,
 );
 
 const notices = [];

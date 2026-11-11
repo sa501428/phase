@@ -1,6 +1,6 @@
 # Phase manual haplotype workspace
 
-Implemented at top-level `index.html`. The assembly-first viewer and its frozen source are preserved at `archive2/index.html` / `archive2/source.tar.gz`; the original viewer remains at `archive/index.html`.
+Implemented at top-level `index.html`. The assembly-first viewer and its frozen source are preserved at `assembly/index.html` / `assembly/source.tar.gz`; the original viewer remains at `automatic/index.html`.
 
 - Explicit gene/transcript/exon/coordinate target; indexed BAM/BAI/CSI plus local 2bit or FASTA/FAI reference.
 - IGV-style reference/coverage tracks and densely packed paired alignments with independent item hit testing; colored SNPs/indels, visible soft clips, MAPQ/CIGAR/strand details through right-click with optional hover off by default, zoom, horizontal drag/pan and vertical row scrolling.

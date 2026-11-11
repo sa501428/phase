@@ -2,7 +2,16 @@
 
 Open **[index.html](index.html)** directly in desktop Chrome or Edge. The viewer is a self-contained HTML file with no server, installation, uploads or runtime downloads.
 
-The assembly-first version is preserved at **[archive2/index.html](archive2/index.html)**, with its source snapshot, documentation, literature notes and checksums in the same folder. The original viewer remains at **[archive/index.html](archive/index.html)**.
+Choose the variant that fits your workflow:
+
+| Variant | Open | Approach |
+| --- | --- | --- |
+| Manual | [index.html](index.html) | IGV-style pileup with manual read-pair merging |
+| Automatic | [automatic/index.html](automatic/index.html) | Automatic grouping of compatible read evidence |
+| Assembly | [assembly/index.html](assembly/index.html) | Local assembly graph and reconstructed sequence patterns |
+| Specific | [specific/index.html](specific/index.html) | Phase a supplied list of variants |
+
+Automatic and Assembly include their original source snapshots and documentation alongside the maintained viewers.
 
 ## Load a specific locus
 
@@ -41,6 +50,16 @@ The inspector distinguishes:
 
 Every fraction exposes numerator and denominator. A variant shared by several groups can have a higher VAF than any one group's share. Neither group share nor site VAF measures cancer-cell fraction. Similarity does not establish tumor ancestry. Pairs with the BAM duplicate flag (0x400) are excluded from the pileup, consensus, coverage, VAF and group-share denominators by default. **Show duplicates** restores them explicitly. Unflagged pairs with identical sequence are not guessed to be PCR duplicates. All original records remain in memory. UMI family consensus is not implemented.
 
+## Minimum variant VAF
+
+The manual, automatic, assembly, and specific-variants viewers default to **Minimum variant VAF (%) = 2**. Alleles below 2% are hidden; exactly 2% remains included. Set the value to **0** to disable suppression. Open **Files & region** / **Evidence filters** / **Evidence settings** and change the cutoff. All variants update their rendered evidence automatically using the loaded reads; no Apply or Analyze click is needed. Read data and manual group memberships are retained.
+
+
+The [specific-variants viewer](specific/index.html) has the same control under **Evidence settings**. Changing the cutoff automatically refreshes the existing results; suppressed requested variants and helpers are excluded from phase links, and the completion message reports the number suppressed.
+Suppression is evaluated per allele using quality-eligible unique physical fragments at the local site, before suppression. Overlapping mates count once, internally contradictory observations do not vote, and uncovered sites are unknown. Indel absence requires a spanned insertion boundary or both deletion flanks; equivalent left-normalized events share support. Without a reference, the modal observed base supplies the comparison baseline. Structural-link annotations use a local fragment evidence fraction, an approximate measure for unresolved breakpoints rather than a resolved SV VAF.
+
+Suppressed observations become unknown for grouping, consensus, hierarchy and cis/trans matching. They cannot cause a clash and are never rewritten as reference. The assembly viewer also excludes masked SNP/indel sequence from its k-mer paths; it does not create replacement reference sequence. Requests for suppressed alleles report the threshold and omit their highlights. Reads and original sequences remain available. Lowering the threshold recomputes the evidence; it can reveal conflicts in existing manually constructed groups without changing their memberships. Saved manual assignments include the threshold; older exports without it default to 2%.
+
 ## Save and resume
 
 **Export assignments** writes JSON containing group names, fragment identities, hidden-pair membership and evidence settings. Restore it after loading the same BAM, reference and interval. A SHA-256 digest of the loaded reference/read evidence prevents accidental application to a different workspace. Invalid, missing or multiply assigned members are rejected atomically. Export files contain read identities and should be treated as case data.
@@ -57,7 +76,9 @@ The built-in simple example has 52 physical fragments / 104 alignments, SNPs, in
 
 ```sh
 npm ci
-npm run build
+npm run build:automatic    # rebuild automatic/index.html
+npm run build:assembly     # rebuild assembly/index.html
+npm run build              # rebuild index.html
 npm test
 npm run test:browser
 npm run test:browser:v2
@@ -68,7 +89,7 @@ Browser checks use installed desktop Chrome through `playwright-core`; set `CHRO
 
 ## Implementation and bounds
 
-New source is in `v3/`; `scripts/build.mjs` generates the top-level release and CSP hashes. Existing JavaScript BAM/reference/CIGAR readers and SNP-distance/average-linkage helpers are reused. `v2/` retains the assembly source and `src/` retains shared modules plus the original viewer source. The historical assembly algorithm review is preserved in `archive2/LITERATURE_REVIEW.md`.
+New source is in `v3/`; `scripts/build.mjs` generates the top-level release and CSP hashes. Existing JavaScript BAM/reference/CIGAR readers and SNP-distance/average-linkage helpers are reused. `v2/` retains the assembly source and `src/` retains shared modules plus the original viewer source. The historical assembly algorithm review is preserved in `assembly/LITERATURE_REVIEW.md`.
 
 Limits fail explicitly: 200 kb selected interval, 100,000 fetched records, two million stored read bases, bounded local I/O, at most 512 indexed mate windows, and a 90-second loading watchdog. There is no silent read downsampling. Read rendering is virtualized; every retained pair is reachable through scrolling. Off-contig or unmapped mates are metadata rather than fabricated aligned sequence.
 

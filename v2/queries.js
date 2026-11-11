@@ -1,4 +1,8 @@
-import { resolveVariantLines, requestedPairs } from "../src/variant-input.js";
+import {
+  resolveVariantLines,
+  requestedPairs,
+  filterRequestedVariants,
+} from "../src/variant-input.js";
 import { phase } from "../src/analysis.js";
 
 export function queryVariants(text, result, catalog = [], selected) {
@@ -17,7 +21,7 @@ export function queryVariants(text, result, catalog = [], selected) {
       entries.filter((e) => e.variant).map((e) => e.variant),
     );
     return {
-      entries,
+      entries: filterRequestedVariants(entries, called),
       pairs: requestedPairs(entries, called, {
         diploid: false,
         support: result.settings.support,
@@ -30,52 +34,55 @@ export function queryVariants(text, result, catalog = [], selected) {
     .filter(Boolean);
   if (lines.length > 32 || text.length > 32000)
     throw Error("Enter at most 32 variants / 32,000 characters");
-  const entries = lines.map((input, i) => {
-    let m = input
-      .replace(/\s+/g, "")
-      .match(/^([^:]+):(?:g\.)?(\d+)([ACGT])>([ACGT])$/i);
-    if (!m) {
-      const f = input.split(/\s+/);
+  const entries = filterRequestedVariants(
+    lines.map((input, i) => {
+      let m = input
+        .replace(/\s+/g, "")
+        .match(/^([^:]+):(?:g\.)?(\d+)([ACGT])>([ACGT])$/i);
+      if (!m) {
+        const f = input.split(/\s+/);
+        if (
+          f.length === 4 &&
+          /^\d+$/.test(f[1]) &&
+          /^[ACGT]$/i.test(f[2]) &&
+          /^[ACGT]$/i.test(f[3])
+        )
+          m = [null, ...f];
+      }
+      if (!m)
+        return {
+          input,
+          line: i + 1,
+          error:
+            "Without a reference use chr:positionREF>ALT for SNVs. Add a reference for HGVS and indels.",
+        };
+      const pos = +m[2] - 1,
+        ref = m[3].toUpperCase(),
+        alt = m[4].toUpperCase();
       if (
-        f.length === 4 &&
-        /^\d+$/.test(f[1]) &&
-        /^[ACGT]$/i.test(f[2]) &&
-        /^[ACGT]$/i.test(f[3])
+        m[1].replace(/^chr/i, "") !== result.region.chr.replace(/^chr/i, "") ||
+        pos < result.region.start ||
+        pos >= result.region.end ||
+        !Number.isSafeInteger(pos) ||
+        alt === ref
       )
-        m = [null, ...f];
-    }
-    if (!m)
+        return {
+          input,
+          line: i + 1,
+          error: "Check contig, interval and distinct REF/ALT alleles",
+        };
       return {
         input,
         line: i + 1,
-        error:
-          "Without a reference use chr:positionREF>ALT for SNVs. Add a reference for HGVS and indels.",
+        pos,
+        ref,
+        alt,
+        variant: { pos, ref, alt },
+        unverified: true,
       };
-    const pos = +m[2] - 1,
-      ref = m[3].toUpperCase(),
-      alt = m[4].toUpperCase();
-    if (
-      m[1].replace(/^chr/i, "") !== result.region.chr.replace(/^chr/i, "") ||
-      pos < result.region.start ||
-      pos >= result.region.end ||
-      !Number.isSafeInteger(pos) ||
-      alt === ref
-    )
-      return {
-        input,
-        line: i + 1,
-        error: "Check contig, interval and distinct REF/ALT alleles",
-      };
-    return {
-      input,
-      line: i + 1,
-      pos,
-      ref,
-      alt,
-      variant: { pos, ref, alt },
-      unverified: true,
-    };
-  });
+    }),
+    result,
+  );
   const pairs = [],
     resolved = entries.filter((e) => e.variant);
   for (let a = 0; a < resolved.length; a++)

@@ -1,3 +1,5 @@
+import { watchVaf } from "../src/live-vaf.js";
+import { hiddenBase, hiddenEvent } from "../src/vaf-filter.js";
 import {
   IGV_COLORS,
   IGV_ALIGNMENT,
@@ -243,12 +245,16 @@ $("demo").onclick = () => {
 };
 function settings() {
   const s = {
+    minVaf: +$("minVaf").value / 100,
     mapq: +$("mapq").value,
     baseq: +$("baseq").value,
     excludeHidden: $("excludeHidden").checked,
     includeDuplicates: $("includeDuplicates").checked,
   };
   if (
+    !Number.isFinite(s.minVaf) ||
+    s.minVaf < 0 ||
+    s.minVaf > 1 ||
     !Number.isInteger(s.mapq) ||
     s.mapq < 0 ||
     s.mapq > 254 ||
@@ -256,7 +262,7 @@ function settings() {
     s.baseq < 0 ||
     s.baseq > 93
   )
-    throw Error("Check MAPQ/base-quality thresholds");
+    throw Error("Check minimum VAF (0–100%), MAPQ and base-quality thresholds");
   return s;
 }
 function run(action, message) {
@@ -277,6 +283,16 @@ $("apply").onclick = () =>
     model.setSettings(settings());
     inspect(inspected);
   }, "Evidence settings applied. Existing assignments retained; conflicting consensus sites are flagged.");
+watchVaf($("minVaf"), {
+  current: () => model?.settings.minVaf,
+  busy: () => busy,
+  update: (minVaf) =>
+    run(() => {
+      model.setSettings({ ...model.settings, minVaf });
+      $("tooltip").hidden = true;
+      inspect(inspected);
+    }, "Variant cutoff updated. Existing assignments retained."),
+});
 $("merge").onclick = () => {
   const id = run(() => {
     const id = model.merge($("hapName").value);
@@ -325,6 +341,7 @@ $("redo").onclick = () =>
   }, "Edit redone.");
 function syncSettings() {
   if (!model) return;
+  $("minVaf").value = (model.settings.minVaf ?? 0.02) * 100;
   $("mapq").value = model.settings.mapq;
   $("baseq").value = model.settings.baseq;
   $("excludeHidden").checked = model.settings.excludeHidden;
@@ -645,6 +662,7 @@ $("includeDuplicates").onchange = () => {
   refresh();
 };
 function refresh() {
+  if (model) pile.dataset.minVaf = model.settings.minVaf;
   if (!model) return;
   rows = model.rows($("sort").value, site, $("showHidden").checked);
   coverage = model.coverage();
@@ -1022,9 +1040,10 @@ function drawPair(c, f, y, w, ppb) {
               xx = xPosition(pos, w);
             if (xx < leftMargin() - ppb || xx > w) continue;
             const mismatch = ref && b !== ref && b !== "N";
-            if (mismatch) drawIGVBase(c, b, xx, yy, ppb, h, r.qual?.[q + j]);
+            if (mismatch && !hiddenBase(r, q + j))
+              drawIGVBase(c, b, xx, yy, ppb, h, r.qual?.[q + j]);
           }
-      } else if (op === "I") {
+      } else if (op === "I" && !hiddenEvent(r, op, p)) {
         const glyph = drawIGVInsertion(c, x, yy, h, n, ppb);
         hits.push({
           read: r.id,
@@ -1036,7 +1055,7 @@ function drawPair(c, f, y, w, ppb) {
           h,
           detail: `Insertion at ${p + 1}: ${hasSequence(r) ? r.seq.slice(q, q + n) : "sequence unavailable"}`,
         });
-      } else if (op === "D" || op === "N") {
+      } else if ((op === "D" || op === "N") && !hiddenEvent(r, op, p)) {
         drawIGVGap(c, x, end, yy, h, n, op);
         hits.push({
           read: r.id,

@@ -1,3 +1,4 @@
+import { hiddenBase, hiddenEvent } from "./vaf-filter.js";
 import { cigarOps } from "./cigar.js";
 export const hasSequence = (read) =>
   read.sequenceUsable !== false &&
@@ -86,6 +87,7 @@ export function rawGeometry(reads, reference, origin) {
           const pos = p + j,
             base = r.seq[q + j];
           if (
+            !hiddenBase(r, q + j) &&
             pos >= origin &&
             pos < origin + reference.length &&
             base &&
@@ -93,7 +95,10 @@ export function rawGeometry(reads, reference, origin) {
           )
             mismatches.set(`${pos}:${base}`, { pos, base });
         }
-      } else if (op === "I" || op === "D" || op === "N")
+      } else if (
+        (op === "I" || op === "D" || op === "N") &&
+        !hiddenEvent(r, op, p)
+      )
         events.set(`${p}:${op}:${n}`, { pos: p, rawPos: p, op, length: n });
       else if (op === "S" && hasSequence(r)) {
         const clip = { pos: p, seq: r.seq.slice(q, q + n) };

@@ -1,3 +1,4 @@
+import { watchVaf } from "./live-vaf.js";
 import { rawGeometry } from "./alignment-geometry.js";
 import { setupHierarchy, groupColor } from "./tree-view.js";
 import { consensusGeometry } from "./consensus.js";
@@ -92,6 +93,7 @@ function status(text, error = false) {
 }
 function options() {
   const values = {
+    minVaf: +$("minVaf").value / 100,
     mapq: +$("mapq").value,
     baseq: +$("baseq").value,
     support: +$("support").value,
@@ -99,6 +101,9 @@ function options() {
     sample: $("sample").value,
   };
   if (
+    !Number.isFinite(values.minVaf) ||
+    values.minVaf < 0 ||
+    values.minVaf > 1 ||
     ![values.mapq, values.baseq, values.support].every(Number.isFinite) ||
     values.mapq < 0 ||
     values.mapq > 254 ||
@@ -166,10 +171,23 @@ function startWorker() {
       expandedFamilies.clear();
       data = m;
       variantInputDirty = false;
-      view = { start: m.region.start, end: m.region.end };
+      view =
+        m.preserveView && view
+          ? view
+          : { start: m.region.start, end: m.region.end };
       rows = 0;
       invalidateLayout();
       selected = null;
+      if (m.preserveView) {
+        $("expanded").hidden = true;
+        for (const id of [
+          "alignment",
+          "eventDetails",
+          "realigned",
+          "readDetail",
+        ])
+          $(id).replaceChildren();
+      }
       render();
       status(
         `${m.result.fragmentCount.toLocaleString()} eligible fragments analyzed. Complete within this interval; no phase inferred outside it. Original alignment records: ${m.result.reads.length.toLocaleString()}. ${
@@ -805,6 +823,7 @@ function showEvent(e) {
 }
 let painted = [];
 function draw() {
+  if (data) $("pileup").dataset.minVaf = data.result.settings.minVaf;
   if (!data) return;
   $("pileup").dataset.viewStart = String(view.start);
   $("pileup").dataset.viewEnd = String(view.end);
@@ -1284,6 +1303,16 @@ function pan(f) {
   invalidateLayout();
   draw();
 }
+watchVaf($("minVaf"), {
+  current: () => data?.result.settings.minVaf ?? (data ? 0.02 : null),
+  busy: () => !$("cancel").disabled,
+  update: (minVaf) => {
+    busy(true);
+    status("Updating visible variants from loaded reads…");
+    worker.postMessage({ type: "vaf", minVaf, request: ++job });
+  },
+  error: (e) => status(e.message, true),
+});
 $("zoomIn").onclick = () => zoom(0.5);
 $("zoomOut").onclick = () => zoom(2);
 $("left").onclick = () => pan(-0.5);

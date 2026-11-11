@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <!--CSP-->
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Phase local clone viewer</title>
+    <title>Phase · automatic grouping</title>
     <!--STYLE-->
   </head>
   <body>
     <header>
       <div class="brand">
-        <b>phase<span> / </span></b><span>LOCAL CLONE VIEWER</span>
+        <b>phase<span> / </span></b><span>AUTOMATIC GROUPING</span>
       </div>
       <div class="privacy"><i></i> Offline · Session only</div>
       <button id="clear">Clear session</button>
@@ -104,8 +104,9 @@
                 type="number"
                 min="0"
                 max="254"
-                value="20" /></label
-            ><label
+                value="20"
+            /></label>
+            <label
               >Min base Q<input
                 id="baseq"
                 type="number"
@@ -121,6 +122,19 @@
                 value="3"
             /></label>
           </div>
+          <label
+            >Minimum variant VAF (%)<input
+              id="minVaf"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value="2"
+          /></label>
+          <p class="muted">
+            Alleles below this VAF are hidden and do not constrain matching or
+            count as clashes. 0 disables suppression.
+          </p>
           <label class="check"
             ><input id="duplicates" type="checkbox" /> Include duplicate-marked
             reads (amplicon assays)</label

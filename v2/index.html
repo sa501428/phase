@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <!--CSP-->
-    <title>Phase · local clone viewer</title>
+    <title>Phase · assembly</title>
     <!--STYLE-->
   </head>
   <body>
@@ -12,11 +12,11 @@
       <div class="brand">
         <span class="mark">P</span>
         <div>
-          <h1>Phase <span>local clone viewer</span></h1>
+          <h1>Phase <span>assembly viewer</span></h1>
           <p>Assembly graph · fragment evidence · multiple local haplotypes</p>
         </div>
       </div>
-      <a href="archive/index.html">Open archived viewer ↗</a
+      <a href="automatic/index.html">Automatic grouping ↗</a
       ><span class="privacy">LOCAL FILES · RAM ONLY</span
       ><button id="reset" class="quiet">Clear session</button>
     </header>
@@ -141,8 +141,9 @@
                 type="number"
                 min="0"
                 max="254"
-                value="20" /></label
-            ><label
+                value="20"
+            /></label>
+            <label
               >Minimum base quality<input
                 id="baseq"
                 type="number"
@@ -151,6 +152,19 @@
                 value="20"
             /></label>
           </div>
+          <label
+            >Minimum variant VAF (%)<input
+              id="minVaf"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value="2"
+          /></label>
+          <p class="muted">
+            Alleles below this VAF are hidden and do not constrain matching or
+            count as clashes. 0 disables suppression.
+          </p>
           <label class="check"
             ><input id="duplicates" type="checkbox" />Include duplicate-flagged
             records in support</label

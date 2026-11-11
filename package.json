@@ -9,7 +9,13 @@
     "fixtures": "node scripts/fixtures.mjs",
     "test:browser": "node scripts/browser-test.mjs",
     "test:browser:v1": "node scripts/browser-test-v1.mjs",
-    "test:browser:v2": "node scripts/browser-test-v2.mjs"
+    "test:browser:v2": "node scripts/browser-test-v2.mjs",
+    "build:specific": "node scripts/build-specific.mjs",
+    "test:browser:specific": "node scripts/browser-test-specific.mjs",
+    "build:automatic": "node scripts/build.mjs automatic",
+    "build:assembly": "node scripts/build.mjs assembly",
+    "test:browser:automatic": "node scripts/browser-test-v1.mjs",
+    "test:browser:assembly": "node scripts/browser-test-v2.mjs"
   },
   "dependencies": {
     "@gmod/bam": "10.2.0",

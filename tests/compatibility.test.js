@@ -20,8 +20,8 @@ const read = (id, seq, extra = {}) => ({
   mate: -1,
   ...extra,
 });
-function model(reads, ref) {
-  const r = phase(reads, ref, 0, opts);
+function model(reads, ref, settings = opts) {
+  const r = phase(reads, ref, 0, settings);
   r.families = buildFamilies(r, ref, 0, opts);
   r.overview = buildOverview(r, { start: 0, end: ref.length }, opts);
   return r;
@@ -85,7 +85,7 @@ test("singleton SNP below discovery threshold is neither assigned nor collapsed 
   );
   verifyRows(r);
 });
-test("low-quality visible base disagreements still split display collapse", () => {
+test("low-quality visible base disagreements still split display collapse with suppression disabled", () => {
   const ref = "A".repeat(20),
     reads = [
       read(0, ref),
@@ -95,7 +95,7 @@ test("low-quality visible base disagreements still split display collapse", () =
         qual: Array(20).fill(5),
       }),
     ],
-    r = model(reads, ref);
+    r = model(reads, ref, { ...opts, minVaf: 0 });
   assert.ok(r.overview.length > 1);
   verifyRows(r);
 });
