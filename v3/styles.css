@@ -940,3 +940,179 @@ body:not(.inputs-open) main {
 .legend .clip b {
   margin-left: 3px;
 }
+
+.variant-graph-panel {
+  flex-shrink: 0;
+  margin-top: 7px;
+  background: #fff;
+  border: 1px solid #d6e2e8;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.variant-graph-panel > summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 650;
+  font-size: 12px;
+  background: #f6fafb;
+}
+#graphSummary {
+  margin-left: 12px;
+  font-weight: 400;
+  font-size: 11px;
+  color: #637a87;
+}
+.variant-graph-body {
+  height: clamp(240px, 34vh, 370px);
+  display: grid;
+  grid-template-rows: auto minmax(100px, 1fr) auto auto;
+}
+.graph-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 5px 10px;
+  border-top: 1px solid #e5edf1;
+}
+.graph-controls label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 10px;
+}
+.graph-controls select,
+.graph-controls input {
+  width: auto;
+  margin: 0;
+  padding: 4px;
+  font-size: 11px;
+}
+.graph-controls input {
+  width: 64px;
+}
+.graph-controls button {
+  padding: 4px 9px;
+  font-size: 11px;
+}
+#graphScale {
+  font-size: 10px;
+}
+.graph-stage {
+  position: relative;
+  min-height: 0;
+  background: radial-gradient(ellipse at center, #fff, #f7fafb);
+}
+#variantNetwork {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 100px;
+  touch-action: none;
+  cursor: grab;
+}
+#variantNetwork [data-node],
+#variantNetwork [data-edge] {
+  cursor: pointer;
+}
+#variantNetwork [data-node]:focus-visible circle {
+  stroke: #153e53;
+  stroke-width: 4;
+}
+#variantNetwork [data-edge]:focus-visible line:last-child {
+  stroke: #153e53;
+}
+.graph-node-number {
+  font-size: 11px;
+  font-weight: 700;
+  fill: #233f50;
+  pointer-events: none;
+}
+.graph-node-label {
+  font-size: 10px;
+  fill: #344f60;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+#variantNetwork .graph-muted {
+  opacity: 0.12;
+}
+#variantNetwork .graph-chosen circle {
+  stroke: #163c4d;
+  stroke-width: 4;
+}
+#variantNetwork .graph-chosen line:last-child {
+  stroke: #13585b;
+}
+#graphMessage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 15px;
+  color: #667f8b;
+  font-size: 12px;
+  pointer-events: none;
+}
+#graphMessage[hidden] {
+  display: none;
+}
+.graph-detail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  padding: 6px 10px;
+  font-size: 11px;
+  border-top: 1px solid #e4edf1;
+  max-height: 75px;
+  overflow: auto;
+}
+.graph-detail button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.graph-note {
+  margin: 0;
+  padding: 4px 10px 6px;
+  font-size: 10px;
+  color: #657d89;
+}
+@media (max-height: 800px) {
+  .variant-graph-body {
+    height: 230px;
+  }
+}
+@media (max-width: 750px) {
+  .variant-graph-body {
+    height: 270px;
+  }
+  #graphSummary {
+    display: block;
+    margin: 3px 0 0 14px;
+  }
+  .graph-controls {
+    gap: 4px;
+  }
+  #graphScale {
+    display: none;
+  }
+  .graph-note {
+    max-height: 38px;
+    overflow: auto;
+  }
+}
+
+.graph-controls label {
+  white-space: nowrap;
+}
+.graph-controls input[type="number"] {
+  width: 64px;
+  min-width: 64px;
+  flex: 0 0 64px;
+}

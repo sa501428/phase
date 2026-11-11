@@ -50,6 +50,16 @@ The inspector distinguishes:
 
 Every fraction exposes numerator and denominator. A variant shared by several groups can have a higher VAF than any one group's share. Neither group share nor site VAF measures cancer-cell fraction. Similarity does not establish tumor ancestry. Pairs with the BAM duplicate flag (0x400) are excluded from the pileup, consensus, coverage, VAF and group-share denominators by default. **Show duplicates** restores them explicitly. Unflagged pairs with identical sequence are not guessed to be PCR duplicates. All original records remain in memory. UMI family consensus is not implemented.
 
+## Variant connections graph
+
+The **Variant connections** panel below the manual pileup opens by default and can be collapsed to give the reads more space. Each bubble is an observed SNP or normalized insertion/deletion allele that meets the current VAF cutoff. Bubble size shows site VAF. Variants are drawn even when they have no observed connection; disconnected coverage blocks remain unlinked.
+
+By default, line weight is **both ALT pairs / pairs callable as REF or ALT at both sites**. Overlapping mates count once; the two ends of one pair can bridge sites. Missing coverage, contradictory mates, and other ALT alleles are excluded from this binary edge denominator. The alternative **ALT linkage strength** mode uses both ALT / (both ALT + A-only + B-only). The inspector reports both measures and their counts. Thickness and opacity use a nonlinear scale relative to the strongest displayed connection, with the numerical range shown in the legend, so weak links stay visibly thin. Node colors distinguish SNPs, insertions and deletions.
+
+Click a node or line for counts; **Select supporting pairs** selects the corresponding original read pairs without merging them. **Show site in pileup** centers that locus. Drag nodes to arrange them, drag the background to pan, and use the wheel or graph controls to zoom. **Minimum shared pairs** filters connections while retaining all variant nodes. Weighted layout suggests local relationships; pairwise links alone do not establish a complete haplotype or cancer-cell clone, and a missing line can reflect no bridging coverage.
+
+The graph updates with live VAF changes, quality settings, hidden-pair and duplicate filters, and manual group edits. Merging pairs never increases their evidence count. The graph supports up to 180 candidate alleles; larger targets show an explicit request to narrow the region or raise the cutoff, while the complete pileup remains available. No reads are downsampled.
+
 ## Minimum variant VAF
 
 The manual, automatic, assembly, and specific-variants viewers default to **Minimum variant VAF (%) = 2**. Alleles below 2% are hidden; exactly 2% remains included. Set the value to **0** to disable suppression. Open **Files & region** / **Evidence filters** / **Evidence settings** and change the cutoff. All variants update their rendered evidence automatically using the loaded reads; no Apply or Analyze click is needed. Read data and manual group memberships are retained.
@@ -81,6 +91,7 @@ npm run build:assembly     # rebuild assembly/index.html
 npm run build              # rebuild index.html
 npm test
 npm run test:browser
+npm run test:browser:graph
 npm run test:browser:v2
 npm run test:browser:v1
 ```

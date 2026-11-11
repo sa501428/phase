@@ -111,6 +111,7 @@ try {
   });
   await page.goto("file://" + resolve("index.html"));
   assert.equal(await page.inputValue("#minVaf"), "2");
+  await page.locator("#variantGraph > summary").click();
   await page.setInputFiles("#bam", "/tmp/phase-packed-tests/packed.bam");
   await page.setInputFiles("#index", "/tmp/phase-packed-tests/packed.bai");
   await page.setInputFiles("#reference", "/tmp/phase-packed-tests/packed.2bit");

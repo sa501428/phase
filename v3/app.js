@@ -1,3 +1,4 @@
+import { VariantGraphView } from "./variant-graph-view.js";
 import { watchVaf } from "../src/live-vaf.js";
 import { hiddenBase, hiddenEvent } from "../src/vaf-filter.js";
 import {
@@ -522,6 +523,7 @@ $("build").onchange = () => {
 };
 function clearWorkspace() {
   model = null;
+  variantNetwork.update(null);
   activeGene = null;
   packed = {
     placements: [],
@@ -679,6 +681,7 @@ function refresh() {
   renderSite();
   renderAccessible();
   buttons();
+  variantNetwork.update(model);
 }
 function sizeRows() {
   const height = viewportHeight();
@@ -715,6 +718,29 @@ function resize(canvas, height) {
   c.setTransform(d, 0, 0, d, 0, 0);
   return { c, w, h: height };
 }
+const variantNetwork = new VariantGraphView($("variantGraph"), {
+  selectPairs(ids) {
+    if (!model) return;
+    model.selection = new Set(model.activeIDs(ids));
+    anchor = null;
+    drawReads();
+    buttons();
+    renderAccessible();
+    status(
+      `Selected ${model.selection.size} supporting pairs from the variant graph.`,
+    );
+  },
+  focusVariant(v) {
+    if (!model || !v) return;
+    site = v.pos;
+    const span = Math.min(
+      model.region.end - model.region.start,
+      Math.max(120, view.end - view.start),
+    );
+    setView(v.pos - span / 2, span);
+    renderSite();
+  },
+});
 const axisWidth = () =>
   Math.min(track.clientWidth || 700, pile.clientWidth || 700);
 const xPosition = (p, w) =>
@@ -1555,8 +1581,10 @@ track.onclick = (e) => {
 function renderSite() {
   if (!model || site === null) {
     $("sitePanel").hidden = true;
+    $("siteLabel").textContent = "No site selected";
     return;
   }
+  $("siteLabel").textContent = `${model.region.chr}:${site + 1}`;
   $("sitePanel").hidden = false;
   $("siteTitle").textContent =
     `${model.region.chr}:${site + 1} · REF ${model.reference[site - model.region.start]}`;

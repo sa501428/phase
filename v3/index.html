@@ -344,6 +344,60 @@
             </section>
           </aside>
         </div>
+        <details id="variantGraph" class="variant-graph-panel" open>
+          <summary>
+            Variant connections
+            <span id="graphSummary"
+              >Load a region to view variant connections</span
+            >
+          </summary>
+          <div class="variant-graph-body">
+            <div class="graph-controls">
+              <label
+                >Line weight<select id="graphWeight">
+                  <option value="frequency">Shared ALT frequency</option>
+                  <option value="linkage">ALT linkage strength</option>
+                </select></label
+              >
+              <label
+                >Minimum shared pairs<input
+                  id="graphSupport"
+                  type="number"
+                  min="1"
+                  max="100000"
+                  step="1"
+                  value="1"
+              /></label>
+              <button id="graphOut" aria-label="Zoom graph out">−</button
+              ><button id="graphIn" aria-label="Zoom graph in">+</button
+              ><button id="graphFit">Fit graph</button>
+              <span id="graphScale" class="muted"></span>
+            </div>
+            <div class="graph-stage">
+              <svg
+                id="variantNetwork"
+                role="group"
+                aria-label="Variant co-occurrence graph. Nodes are SNP or indel alleles. Line thickness shows shared alternate-allele frequency. Select nodes and lines for supporting read-pair counts."
+                viewBox="0 0 1000 350"
+                tabindex="0"
+              ></svg>
+              <p id="graphMessage" role="status">
+                Load a region to view variant connections.
+              </p>
+            </div>
+            <div id="graphDetail" class="graph-detail" aria-live="polite"></div>
+            <p class="graph-note">
+              <span id="graphDefinition"
+                >Line weight = both ALT ÷ pairs callable as REF/ALT at both
+                sites.</span
+              >
+              Node size shows VAF. All loaded pairs contribute; the live VAF
+              cutoff applies. A missing line can mean no bridging coverage or no
+              shared ALT. Pairwise links suggest local patterns, not complete
+              cellular clones.
+            </p>
+          </div>
+        </details>
       </section>
     </main>
     <div id="tooltip" role="tooltip" hidden></div>

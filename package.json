@@ -15,7 +15,8 @@
     "build:automatic": "node scripts/build.mjs automatic",
     "build:assembly": "node scripts/build.mjs assembly",
     "test:browser:automatic": "node scripts/browser-test-v1.mjs",
-    "test:browser:assembly": "node scripts/browser-test-v2.mjs"
+    "test:browser:assembly": "node scripts/browser-test-v2.mjs",
+    "test:browser:graph": "node scripts/browser-test-variant-graph.mjs"
   },
   "dependencies": {
     "@gmod/bam": "10.2.0",
