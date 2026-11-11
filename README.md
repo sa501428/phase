@@ -10,18 +10,22 @@ The assembly-first version is preserved at **[archive2/index.html](archive2/inde
 2. Open the files. Enter an interval such as `chr17:7668421-7675244` using **1-based inclusive coordinates**, or find a gene in the embedded hg19/hg38 catalog and choose a transcript or individual exon. The catalog must match the BAM assembly.
 3. Load the region. Reads are queried through the index for that locus; named same-contig mates are retrieved through bounded indexed lookups. There is no BAM-wide assembly or reconstruction.
 
-Each physical read pair starts as its own row. The two ends share a coordinate axis and are connected across the insert. Soft clips extend from their original anchors as lighter, unaligned sequence. SNPs use A/C/G/T colors; insertions are purple triangles; deletions and skipped regions are drawn separately. Hover reads for **MAPQ**, CIGAR, strand, flags, mate position and base information. Stored BAM sequence is already aligned in its reference orientation.
+The pileup uses IGV-style packing: nonoverlapping read pairs share horizontal lanes, and overlapping templates occupy separate lanes. The two ends of a pair are drawn on the same horizontal line with a connector. Packing never merges their identities or evidence. Soft clips extend from their original anchors as lighter, unaligned sequence. SNPs use A/C/G/T colors; insertions are purple triangles; deletions and skipped regions are drawn separately. **Hover details are off by default. Right-click a read and choose Read details** for MAPQ, CIGAR, strand, flags, mate position and base information. The same menu offers **Enable hover details** / **Disable hover details**. Stored BAM sequence is already aligned in its reference orientation.
 
-Drag horizontally to pan, use arrow/zoom buttons, or Ctrl/Command+wheel to zoom. Ordinary wheel scrolling moves vertically through all rows. Panning stays within the loaded reference interval; load a different interval to change the workspace. An individual mate outside the loaded target remains available in its pair and metadata, although reference comparison is unavailable beyond the target. The initial view focuses on the first covered part of a larger target; **Fit target** shows the complete selected interval.
+Drag horizontally to pan, use arrow/zoom buttons, or Ctrl/Command+wheel to zoom. Ordinary wheel scrolling moves vertically through the packed lanes. Large (18 px) read bars are the default; Medium and Extra large sizes are available. Panning stays within the loaded reference interval; load a different interval to change the workspace. An individual mate outside the loaded target remains available in its pair and metadata, although reference comparison is unavailable beyond the target. The initial view focuses on the first covered part of a larger target; **Fit target** shows the complete selected interval.
+
+## Maximize the pileup
+
+**Files & region** and **Haplotypes / VAF** independently toggle the side panels. **Compact top / Expand top** compresses the header and workspace summary while preserving selection and Undo/Redo controls. After loading a locus, both side panels are collapsed and the top is compact; the pileup fills the remaining window. Hierarchy and VAF remain available through the right-panel toggle.
 
 ## Construct haplotypes yourself
 
-- **Click** a row to toggle its whole pair. **Shift-click** another row to select the inclusive range in the current order, including rows reached by scrolling. Group-row selection selects its displayed members; expanded child rows select individual pairs.
-- Sort unassigned pairs by position, name, or the allele at a site selected by clicking the reference track. Sorting never changes assignments. **Select visible rows** is available for batches.
+- **Click** an individual read or its pair connector to toggle that pair. Other pairs sharing its lane remain independent. **Shift-click** another pair to select a range in visual order (top to bottom, then left to right), including across scrolling. **Shift-drag** selects pairs intersecting a rectangular area. Consensus-track selection selects that group’s displayed members.
+- Sort unassigned pairs by position, name, or the allele at a site selected by clicking the reference track. Sorting never changes assignments. Position mode packs densely, Name breaks same-position ties, and selected-site allele mode packs each allele band separately. **Select visible pairs** is available for batches.
 - Enter an optional name and **Merge selected**. Original pairs are retained under one consensus row. Expand via the triangle or inspector to see every contributing pair. Selecting the whole haplotype plus additional compatible pairs extends it while keeping its name and identity; selecting a subset can create a separate group.
 - A single contradictory callable base, deletion, or insertion **blocks the merge**. There is no majority override. Missing coverage stays unknown. Soft clips remain unaligned evidence and do not vote as reference-aligned variants.
 - Select pairs and **Hide selected** to remove unhelpful rows. **Restore hidden**, **Show hidden rows**, and Undo keep hiding reversible. By default hidden pairs are excluded from consensus, coverage and VAF. Uncheck **Exclude hidden pairs from consensus / VAF** for display-only hiding.
-- **Ungroup selected** detaches selected pairs; **Dissolve haplotype** returns every member to individual rows. Naming, merging, hiding, restoring, ungrouping and imports support Undo/Redo. Ctrl/Command+Z works outside text fields; Shift+M merges and Shift+H hides.
+- **Ungroup selected** detaches selected pairs; **Dissolve haplotype** returns every member to the unassigned packed pileup. Naming, merging, hiding, restoring, ungrouping and imports support Undo/Redo. Ctrl/Command+Z works outside text fields; Shift+M merges and Shift+H hides.
 
 Nothing is automatically merged, clustered into assignments, or downsampled. You may construct any number of local haplotypes. Unassigned pairs stay independent. Changing consensus quality thresholds retains your assignments; any newly exposed conflicts are marked and consensus FASTA export stops until they are resolved.
 
@@ -35,7 +39,7 @@ The inspector distinguishes:
 - **Site VAF:** fragments carrying the displayed alternate allele divided by all included fragments callable at that position, across assigned and unassigned pairs. Overlapping mates count once; uncovered, filtered and internally contradictory calls do not become reference votes.
 - **Within-group ALT fraction:** alternate-carrying fragments divided by callable fragments within the selected group.
 
-Every fraction exposes numerator and denominator. A variant shared by several groups can have a higher VAF than any one group's share. Neither group share nor site VAF measures cancer-cell fraction. Similarity does not establish tumor ancestry. Duplicate-flagged pairs remain available and, when manually selected, contribute as distinct query-name fragments; UMI family consensus is not implemented.
+Every fraction exposes numerator and denominator. A variant shared by several groups can have a higher VAF than any one group's share. Neither group share nor site VAF measures cancer-cell fraction. Similarity does not establish tumor ancestry. Pairs with the BAM duplicate flag (0x400) are excluded from the pileup, consensus, coverage, VAF and group-share denominators by default. **Show duplicates** restores them explicitly. Unflagged pairs with identical sequence are not guessed to be PCR duplicates. All original records remain in memory. UMI family consensus is not implemented.
 
 ## Save and resume
 
@@ -47,7 +51,7 @@ Loading a new interval begins a fresh workspace. Export assignments to retain ma
 
 ## Synthetic examples and validation
 
-The built-in simple example has 52 physical fragments / 104 alignments, SNPs, insertion/deletion alleles and legal soft clips on paired reads. Hover the first founder pair for MAPQ 42 and 58. The second example has ten nested/sibling somatic lineages of unequal abundance plus five shared founder-only fragments. Both begin **ungrouped**, so construction remains a human decision.
+The built-in simple example has 52 physical fragments / 104 alignments, SNPs, insertion/deletion alleles and legal soft clips on paired reads. Request read details for the first founder pair for MAPQ 42 and 58. The second example has ten nested/sibling somatic lineages of unequal abundance plus five shared founder-only fragments. Both begin **ungrouped**, so construction remains a human decision.
 
 `tests/fixtures/` contains generated binary BAM/BAI/CSI, 2bit and FASTA/FAI inputs. Load `synthetic:1001-1800` for the existing `synthetic`, `paired`, `record-compatibility`, `structural` and `somatic-ten` fixtures. No patient data is included or required.
 
@@ -60,7 +64,7 @@ npm run test:browser:v2
 npm run test:browser:v1
 ```
 
-Browser checks use installed desktop Chrome through `playwright-core`; set `CHROME_PATH` if needed. Checks exercise real Shift-click gestures, merging/hiding, conflicts, Undo/Redo, MAPQ/soft-clip hover, read/consensus SNP geometry, hierarchy, VAF denominators, scrolling/panning/zoom, assignments/FASTA, binary inputs, missing SEQ, exon lookup, reset and offline CSP behavior. Real BAM testing is performed by the user.
+Browser checks use installed desktop Chrome through `playwright-core`; set `CHROME_PATH` if needed. Checks exercise real Shift-click gestures, merging/hiding, conflicts, Undo/Redo, MAPQ/soft-clip hover, read/consensus SNP geometry, shared-lane hit testing, packed layout, hierarchy, VAF denominators, duplicate filtering, right-click details and optional hover, collapsible panels, viewport sizing, scrolling/panning/zoom, assignments, binary inputs, missing SEQ, exon lookup, reset and offline CSP behavior. Real BAM testing is performed by the user.
 
 ## Implementation and bounds
 
@@ -71,3 +75,5 @@ Limits fail explicitly: 200 kb selected interval, 100,000 fetched records, two m
 Consensus defaults to MAPQ ≥20 and base quality ≥20. Secondary, QC-failed, missing/invalid-sequence and MAPQ-255 alignments do not vote. Missing/255 base quality is accepted as unknown. Missing SEQ is drawn without fake bases; inconsistent CIGAR/SEQ geometry is quarantined per record. Contig names/lengths are checked against the reference, but matching lengths do not establish sequence identity.
 
 All dependencies and hg19/hg38 transcript annotations are embedded in the release. Runtime network requests are blocked by CSP. There are no WASM/runtime downloads. Third-party notices/build checksums are generated under `dist/`; annotation provenance is in `references/manifest.json`. Case inputs are ignored by `.gitignore`, with intentional exceptions for generated synthetic fixtures.
+
+The packing/display behavior follows the [IGV alignment guide](https://igv.org/doc/desktop/UserGuide/tracks/alignments/viewing_alignments_basics/) and [IGV paired-end view](https://igv.org/doc/desktop/UserGuide/tracks/alignments/paired_end_alignments/). Phase uses its own local Canvas renderer and packing implementation; no IGV server or runtime download is required.

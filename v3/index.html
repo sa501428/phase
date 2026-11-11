@@ -7,7 +7,7 @@
     <title>Phase · manual haplotype workspace</title>
     <!--STYLE-->
   </head>
-  <body>
+  <body class="inputs-open">
     <header>
       <div class="brand">
         <span class="mark">P</span>
@@ -15,6 +15,13 @@
           <h1>Phase <span>local clone viewer</span></h1>
           <p>Inspect the reads. Build the haplotypes.</p>
         </div>
+      </div>
+      <div class="chrome-controls">
+        <button id="toggleInputs" aria-expanded="true">Files & region</button
+        ><button id="toggleAnalysis" aria-expanded="false">
+          Haplotypes / VAF</button
+        ><button id="toggleTop" aria-expanded="true">Compact top</button
+        ><span id="compactTarget"></span>
       </div>
       <nav>
         <a href="archive2/index.html">Assembly viewer ↗</a
@@ -128,8 +135,9 @@
         <details>
           <summary>Selection & interpretation</summary>
           <p>
-            Click a row to toggle its whole pair. Shift-click selects an
-            inclusive range in the current row order, even across scrolling.
+            Click a read or connector to toggle its whole pair. Shift-click
+            selects a range from top to bottom and left to right, including
+            across scrolling. Shift-drag selects pairs in a rectangular area.
             Drag horizontally to pan; wheel scrolls rows; Ctrl/Command+wheel
             zooms. Click the coordinate/reference track to select a site, then
             sort pairs by that allele.
@@ -153,9 +161,9 @@
           </p>
           <p>
             Secondary/QC-failed/unavailable sequences and MAPQ 255 do not vote.
-            Missing base quality is accepted as unknown. PCR-duplicate flags
-            stay visible and your manually selected pairs remain counted; there
-            is no UMI consensus.
+            Missing base quality is accepted as unknown. Duplicate-flagged pairs
+            are filtered from the pileup and evidence by default. Show
+            duplicates restores them; there is no UMI consensus.
           </p>
           <p>
             No upload, telemetry, browser storage or downsampling. Bounded local
@@ -174,12 +182,9 @@
             <div class="eyebrow">REFERENCE-BASED REVIEW</div>
             <h2 id="target">Manual haplotype workspace</h2>
             <p id="counts" class="muted">
-              Pairs stay separate until you merge them.
+              Read pairs are packed without merging; select pairs to construct
+              haplotypes.
             </p>
-          </div>
-          <div class="history">
-            <button id="undo" disabled>Undo</button
-            ><button id="redo" disabled>Redo</button>
           </div>
         </div>
         <div class="selection-toolbar">
@@ -193,6 +198,10 @@
           ><button id="hide" disabled>Hide selected</button
           ><button id="ungroup" disabled>Ungroup selected</button
           ><button id="clearSelection" disabled>Clear</button>
+          <div class="history">
+            <button id="undo" disabled>Undo</button
+            ><button id="redo" disabled>Redo</button>
+          </div>
         </div>
         <div class="viewer-grid">
           <section class="viewer">
@@ -215,7 +224,8 @@
               ><span class="del">— deletion</span
               ><span class="clip">Soft clips</span
               ><span class="key"
-                >Shift-click: range · drag: pan · hover: MAPQ</span
+                >Shift-click: range · Shift-drag: select · drag: pan ·
+                right-click: details</span
               >
             </div>
             <canvas
@@ -230,11 +240,20 @@
                   <option value="name">Name</option>
                   <option value="allele">Selected-site allele</option>
                 </select></label
-              ><button id="selectVisible">Select visible rows</button
+              ><button id="selectVisible">Select visible pairs</button
               ><label class="check"
                 ><input id="showHidden" type="checkbox" />Show hidden
                 rows</label
               ><button id="restore">Restore hidden</button
+              ><label
+                >Read size<select id="readSize">
+                  <option value="14">Medium</option>
+                  <option value="18" selected>Large</option>
+                  <option value="24">Extra large</option>
+                </select></label
+              ><label class="check"
+                ><input id="includeDuplicates" type="checkbox" />Show
+                duplicates</label
               ><span id="siteLabel">No site selected</span>
             </div>
             <div
@@ -248,7 +267,7 @@
                   id="pileup"
                   height="570"
                   tabindex="0"
-                  aria-label="Paired read rows. Click to select; Shift-click for a range; drag to pan. Accessible row selection is below."
+                  aria-label="Packed paired alignments. Click an individual pair; Shift-click for a range; Shift-drag to select an area; right-click for details."
                 ></canvas>
               </div>
             </div>
@@ -295,7 +314,8 @@
               <h3 id="inspectorTitle">Select a pair or haplotype</h3>
               <div id="inspector">
                 <p class="muted">
-                  Hover a read for MAPQ, flags, CIGAR and base information.
+                  Right-click a read and choose Read details for MAPQ, flags,
+                  CIGAR and base information. Hover details start off.
                   Constructed haplotypes show read-pair share and site VAFs
                   here.
                 </p>
@@ -311,6 +331,13 @@
       </section>
     </main>
     <div id="tooltip" role="tooltip" hidden></div>
+    <div
+      id="readMenu"
+      class="read-menu"
+      role="menu"
+      aria-label="Read actions"
+      hidden
+    ></div>
     <!--SCRIPT-->
   </body>
 </html>

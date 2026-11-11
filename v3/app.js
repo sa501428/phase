@@ -2,6 +2,7 @@ import { ungzip } from "pako";
 import hg19 from "../references/hg19.js";
 import hg38 from "../references/hg38.js";
 import { ManualWorkspace } from "./model.js";
+import { packPileup, pileupHit } from "./layout.js";
 import { groupStatistics, manualHierarchy, siteCounts } from "./statistics.js";
 import { hasSequence } from "../src/alignment-geometry.js";
 const $ = (id) => document.getElementById(id),
@@ -52,10 +53,22 @@ let worker,
   activeGene = null,
   contigs = [],
   lastTooltip = "";
-const rowHeight = 42,
-  pile = $("pileup"),
+let packed = {
+  placements: [],
+  byItem: new Map(),
+  order: [],
+  sections: [],
+  height: 570,
+  laneCount: 0,
+};
+let hoverDetails = false,
+  contextPoint = null,
+  boxSelection = null;
+const readHeight = () => +$("readSize").value;
+const viewportHeight = () => Math.max(160, $("readScroll").clientHeight || 570);
+const pile = $("pileup"),
   track = $("referenceTrack");
-const leftMargin = () => (pile.clientWidth < 570 ? 152 : 210);
+const leftMargin = () => (pile.clientWidth < 570 ? 88 : 112);
 function status(text, error = false) {
   $("status").textContent = text;
   $("status").classList.toggle("error", error);
@@ -168,6 +181,9 @@ function receive({ data: m }) {
     };
     view.end = view.start + span;
     model.setSettings(settings());
+    document.body.classList.remove("inputs-open");
+    document.body.classList.add("top-compact");
+    syncChrome();
     refresh();
     inspect(null);
     status(
@@ -227,6 +243,7 @@ function settings() {
     mapq: +$("mapq").value,
     baseq: +$("baseq").value,
     excludeHidden: $("excludeHidden").checked,
+    includeDuplicates: $("includeDuplicates").checked,
   };
   if (
     !Number.isInteger(s.mapq) ||
@@ -292,6 +309,7 @@ function syncSettings() {
   $("mapq").value = model.settings.mapq;
   $("baseq").value = model.settings.baseq;
   $("excludeHidden").checked = model.settings.excludeHidden;
+  $("includeDuplicates").checked = model.settings.includeDuplicates;
 }
 $("clearSelection").onclick = () => {
   if (!model) return;
@@ -469,6 +487,19 @@ $("build").onchange = () => {
 function clearWorkspace() {
   model = null;
   activeGene = null;
+  packed = {
+    placements: [],
+    byItem: new Map(),
+    order: [],
+    sections: [],
+    height: 570,
+    laneCount: 0,
+  };
+  hoverDetails = false;
+  contextPoint = null;
+  boxSelection = null;
+  $("readMenu").hidden = true;
+  $("readMenu").replaceChildren();
   rows = [];
   coverage = null;
   view = null;
@@ -529,6 +560,9 @@ $("reset").onclick = () => {
   ])
     $(id).value = "";
   $("showHidden").checked = false;
+  $("includeDuplicates").checked = false;
+  document.body.classList.add("inputs-open");
+  document.body.classList.remove("top-compact");
   $("sort").value = "position";
   for (const [id, text] of [
     ["genes", "Gene locus"],
@@ -540,8 +574,55 @@ $("reset").onclick = () => {
     $(id).replaceChildren(o);
   }
   clearWorkspace();
+  syncChrome();
   startWorker();
   status("Session cleared. No case data was saved in browser storage.");
+};
+function syncChrome() {
+  $("toggleInputs").setAttribute(
+    "aria-expanded",
+    String(document.body.classList.contains("inputs-open")),
+  );
+  $("toggleAnalysis").setAttribute(
+    "aria-expanded",
+    String(document.body.classList.contains("analysis-open")),
+  );
+  const expanded = !document.body.classList.contains("top-compact");
+  $("toggleTop").setAttribute("aria-expanded", String(expanded));
+  $("toggleTop").textContent = expanded ? "Compact top" : "Expand top";
+  requestAnimationFrame(() => {
+    sizeRows();
+    drawTrack();
+    drawReads();
+    drawTree();
+    renderAccessible();
+  });
+}
+$("toggleInputs").onclick = () => {
+  document.body.classList.toggle("inputs-open");
+  syncChrome();
+};
+$("toggleAnalysis").onclick = () => {
+  document.body.classList.toggle("analysis-open");
+  syncChrome();
+};
+$("toggleTop").onclick = () => {
+  document.body.classList.toggle("top-compact");
+  syncChrome();
+};
+$("readSize").onchange = () => {
+  sizeRows();
+  drawReads();
+  renderAccessible();
+};
+$("includeDuplicates").onchange = () => {
+  if (!model) return;
+  model.setSettings(settings());
+  if (!model.settings.includeDuplicates)
+    for (const id of model.selection)
+      if (model.fragments[id].duplicate) model.selection.delete(id);
+  anchor = null;
+  refresh();
 };
 function refresh() {
   if (!model) return;
@@ -551,8 +632,7 @@ function refresh() {
   sizeRows();
   $("counts").textContent =
     `${model.fragments.length} pairs/fragments · ${model.reads.length} records · ${model.groups.length} manual haplotypes · ${model.hidden.size} hidden pairs`;
-  $("rowCount").textContent =
-    `${rows.length} rows · all retained records available`;
+
   drawReads();
   drawTrack();
   renderGroups();
@@ -563,10 +643,30 @@ function refresh() {
   buttons();
 }
 function sizeRows() {
+  const height = viewportHeight();
+  if (model && view)
+    packed = packPileup(model, rows, {
+      view,
+      width: pile.clientWidth || 700,
+      left: leftMargin(),
+      readHeight: readHeight(),
+      sort: $("sort").value,
+      site,
+      minHeight: height,
+    });
   const rule = [...document.styleSheets[0].cssRules].find(
     (r) => r.selectorText === "#readSpace",
   );
-  if (rule) rule.style.height = Math.max(570, rows.length * rowHeight) + "px";
+  if (rule) rule.style.height = Math.max(height, packed.height) + "px";
+  pile.style.height = height + "px";
+  if (model) {
+    const visible = packed.placements.filter((p) => !p.header).length,
+      dups = model.fragments.filter((f) => f.duplicate).length;
+    $("rowCount").textContent =
+      `${packed.laneCount} packed lanes · ${visible} visible pairs${!model.settings.includeDuplicates && dups ? ` · ${dups} duplicate-flagged pairs filtered` : ""}`;
+    $("compactTarget").textContent =
+      `${model.region.chr}:${model.region.start + 1}–${model.region.end} · ${model.groups.length} haplotypes`;
+  }
 }
 function resize(canvas, height) {
   const w = canvas.clientWidth || 700,
@@ -589,6 +689,8 @@ function setView(start, span) {
     Math.min(model.region.end - span, start),
   );
   view = { start, end: start + span };
+  closeReadMenu();
+  sizeRows();
   $("viewRange").value =
     `${model.region.chr}:${Math.floor(start) + 1}-${Math.ceil(view.end)}`;
   drawTrack();
@@ -731,153 +833,153 @@ function drawTrack() {
   c.fillText(`${max}× max`, 12, 65);
 }
 function drawReads() {
-  const { c, w } = resize(pile, 570),
+  const { c, w } = resize(pile, viewportHeight()),
+    height = viewportHeight(),
     left = leftMargin(),
     scroll = $("readScroll").scrollTop;
-  c.fillStyle = "#fff";
-  c.fillRect(0, 0, w, 570);
+  c.fillStyle = "#ffffff";
+  c.fillRect(0, 0, w, height);
   hits = [];
   if (!model || !view) {
-    c.fillStyle = "#91a2ad";
-    c.font = "12px -apple-system,sans-serif";
-    c.textAlign = "center";
-    c.fillText("Load a local region to inspect its paired reads", w / 2, 180);
-    return;
-  }
-  const first = Math.max(0, Math.floor(scroll / rowHeight)),
-    last = Math.min(rows.length, first + 15),
-    ppb = (w - left - 12) / (view.end - view.start);
-  pile.dataset.firstRow = first;
-  pile.dataset.viewStart = view.start;
-  pile.dataset.viewEnd = view.end;
-  pile.dataset.rowCount = rows.length;
-  if (!rows.length) {
-    c.fillStyle = "#8195a3";
-    c.font = "12px -apple-system,sans-serif";
+    c.fillStyle = "#8797a1";
+    c.font = "13px -apple-system,sans-serif";
     c.textAlign = "center";
     c.fillText(
-      model.hidden.size
-        ? "All pairs are hidden. Restore hidden or show hidden rows."
-        : "No alignment records in this target. Choose another gene or interval.",
+      "Open files and choose a gene or interval to load its pileup",
       w / 2,
-      150,
+      Math.min(160, height / 2),
     );
     return;
   }
-  for (let i = first; i < last; i++) {
-    const row = rows[i],
-      y = i * rowHeight - scroll,
-      chosen = row.members.filter((id) => model.selection.has(id)).length,
-      hidden = row.kind !== "group" && model.hidden.has(row.fragment.id);
-    c.fillStyle = chosen
-      ? "#e6f2f9"
-      : row.kind === "group"
-        ? "#eff6f9"
-        : i % 2
-          ? "#fbfcfe"
-          : "#fff";
-    c.fillRect(0, y, w, rowHeight);
-    c.strokeStyle = "#edf1f5";
-    c.beginPath();
-    c.moveTo(0, y + rowHeight - 0.5);
-    c.lineTo(w, y + rowHeight - 0.5);
-    c.stroke();
+  pile.dataset.firstRow = Math.floor(scroll / (readHeight() + 9));
+  pile.dataset.viewStart = view.start;
+  pile.dataset.viewEnd = view.end;
+  pile.dataset.rowCount = rows.length;
+  pile.dataset.laneCount = packed.laneCount;
+  pile.dataset.readHeight = readHeight();
+  pile.dataset.leftMargin = left;
+  const ppb = (w - left - 12) / (view.end - view.start);
+  c.fillStyle = "#f8fafb";
+  c.fillRect(0, 0, left - 1, height);
+  if (site !== null) {
+    c.fillStyle = "#f0cf7733";
+    c.fillRect(xPosition(site, w), 0, Math.max(2, ppb), height);
+  }
+  for (const section of packed.sections)
+    if (section.end >= scroll && section.y < scroll + height) {
+      c.fillStyle = "#8295a1";
+      c.font = "10px -apple-system,sans-serif";
+      c.textAlign = "left";
+      c.fillText(section.label, 8, Math.max(14, section.y - scroll + 14));
+    }
+  for (const p of packed.placements) {
+    if (p.y + p.height < scroll || p.y > scroll + height) continue;
+    const row = rows[p.index],
+      y = p.y - scroll,
+      selected = row.members.some((id) => model.selection.has(id));
+    if (p.header) {
+      c.fillStyle = "#f0f5f8";
+      c.fillRect(0, y, w, p.height);
+      c.fillStyle = color(row.group.id);
+      c.font = "bold 11px -apple-system,sans-serif";
+      c.textAlign = "left";
+      c.fillText(
+        (model.expanded.has(row.group.id) ? "▾ " : "▸ ") +
+          row.group.name.slice(0, 12),
+        7,
+        y + 13,
+      );
+      c.fillStyle = "#8397a4";
+      c.font = "9px -apple-system,sans-serif";
+      c.fillText(
+        `${model.activeIDs(row.group.members).length} pairs`,
+        8,
+        y + 26,
+      );
+    }
     c.save();
     c.beginPath();
-    c.rect(left, y, w - left, rowHeight);
+    c.rect(left, y, w - left, p.height + 2);
     c.clip();
-    if (site !== null) {
-      c.fillStyle = "#edc36a33";
-      c.fillRect(xPosition(site, w), y, Math.max(2, ppb), rowHeight);
+    if (row.kind !== "group" && model.hidden.has(row.fragment.id))
+      c.globalAlpha = 0.32;
+    if (selected) {
+      c.fillStyle = "#d8eaff";
+      c.fillRect(p.x1 - 3, y - 1, Math.max(10, p.x2 - p.x1 + 6), p.height + 2);
     }
-    if (hidden) c.globalAlpha = 0.35;
     if (row.kind === "group") drawConsensus(c, row.group, y, w, ppb);
     else drawPair(c, row.fragment, y, w, ppb);
+    if (selected) {
+      c.strokeStyle = "#1d68a5";
+      c.lineWidth = 1.4;
+      c.strokeRect(p.x1 - 3, y, Math.max(10, p.x2 - p.x1 + 6), p.height);
+    }
     c.restore();
-    c.fillStyle = chosen ? "#246b91" : "#fff";
-    c.strokeStyle = "#b8cbd7";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.roundRect(8, y + 13, 12, 12, 2);
-    c.fill();
-    c.stroke();
-    if (chosen) {
-      c.fillStyle = "#fff";
-      c.font = "10px sans-serif";
-      c.fillText(chosen === row.members.length ? "✓" : "−", 9, y + 23);
-    }
-    c.textAlign = "left";
-    if (row.kind === "group") {
-      c.fillStyle = color(row.group.id);
-      c.font = "12px sans-serif";
-      c.fillText(model.expanded.has(row.group.id) ? "▾" : "▸", 29, y + 24);
-      c.font = "bold 11px -apple-system,sans-serif";
-      c.fillText(row.group.name.slice(0, left < 180 ? 16 : 22), 45, y + 15);
-      const active = model.activeIDs(row.group.members).length,
-        total = model.activeIDs(model.fragments.map((f) => f.id)).length;
-      c.fillStyle = "#718e9f";
-      c.font = "9px -apple-system,sans-serif";
-      c.fillText(
-        `${active}/${row.group.members.length} pairs · share ${pct(active, total)}`,
-        45,
-        y + 29,
-      );
-    } else {
-      const f = row.fragment;
-      c.fillStyle = hidden ? "#a0aeb8" : "#486b80";
-      c.font = "10px -apple-system,sans-serif";
-      const name = (row.kind === "child" ? "↳ " : "") + f.name;
-      c.fillText(name.slice(0, left < 180 ? 19 : 28), 29, y + 15);
-      c.fillStyle = "#8a9eac";
-      c.font = "9px -apple-system,sans-serif";
-      const rs = f.readIds.map((id) => model.readById.get(id));
-      c.fillText(
-        rs
-          .map(
-            (r) =>
-              `${r.flags & 128 ? "R2" : r.flags & 64 ? "R1" : "read"} Q${r.mq === 255 ? "?" : r.mq}`,
-          )
-          .join(" · ")
-          .slice(0, left < 180 ? 22 : 33) + (hidden ? " · hidden" : ""),
-        29,
-        y + 29,
-      );
-    }
   }
-  c.strokeStyle = "#d7e3eb";
+  if (!packed.placements.length) {
+    c.fillStyle = "#8697a2";
+    c.textAlign = "center";
+    c.font = "12px sans-serif";
+    c.fillText(
+      model.hidden.size
+        ? "No displayed pairs here. Restore hidden pairs or pan to another position."
+        : "No displayed pairs in this view. Pan or change duplicate filtering.",
+      (w + left) / 2,
+      100,
+    );
+  }
+  c.strokeStyle = "#dbe3e8";
   c.beginPath();
   c.moveTo(left - 0.5, 0);
-  c.lineTo(left - 0.5, 570);
+  c.lineTo(left - 0.5, height);
   c.stroke();
+  if (boxSelection) {
+    c.fillStyle = "#3e88c228";
+    c.strokeStyle = "#3e88c2";
+    const { x, y, endX, endY } = boxSelection;
+    c.fillRect(
+      Math.min(x, endX),
+      Math.min(y, endY),
+      Math.abs(endX - x),
+      Math.abs(endY - y),
+    );
+    c.strokeRect(
+      Math.min(x, endX),
+      Math.min(y, endY),
+      Math.abs(endX - x),
+      Math.abs(endY - y),
+    );
+  }
 }
 function drawPair(c, f, y, w, ppb) {
   const rs = f.readIds.map((id) => model.readById.get(id)),
-    mapped = rs.filter((r) => r.alignmentUsable);
+    mapped = rs.filter((r) => r.alignmentUsable),
+    h = readHeight(),
+    yy = y,
+    center = yy + h / 2;
   if (mapped.length > 1) {
-    c.strokeStyle = "#bacbd6";
-    c.setLineDash([3, 3]);
+    const x1 = xPosition(Math.min(...mapped.map((r) => r.start)), w),
+      x2 = xPosition(Math.max(...mapped.map((r) => r.end)), w);
+    c.strokeStyle = "#aaaeb2";
+    c.lineWidth = 1;
     c.beginPath();
-    c.moveTo(xPosition(Math.min(...mapped.map((r) => r.start)), w), y + 22);
-    c.lineTo(xPosition(Math.max(...mapped.map((r) => r.end)), w), y + 22);
+    c.moveTo(x1, center);
+    c.lineTo(x2, center);
     c.stroke();
-    c.setLineDash([]);
+    hits.push({ fragment: f.id, x: x1, y: yy, w: x2 - x1, h });
   }
   for (const r of rs) {
-    const yy = y + (r.flags & 128 ? 25 : 12),
-      alpha =
-        r.flags & (256 | 512) || r.mq < model.settings.mapq || r.mq === 255
-          ? 0.45
-          : 1;
     c.save();
-    c.globalAlpha *= alpha;
+    if (r.flags & (256 | 512) || r.mq < model.settings.mapq || r.mq === 255)
+      c.globalAlpha *= 0.45;
     if (!r.alignmentUsable) {
-      c.fillStyle = "#a8aeb9";
-      c.font = "9px sans-serif";
-      c.fillText(
-        r.displayIssue || "Unavailable alignment",
-        leftMargin() + 8,
-        yy + 5,
-      );
+      const x = xPosition(Math.max(model.region.start, r.start), w);
+      c.fillStyle = "#b3b8be";
+      c.fillRect(x, yy, 9, h);
+      c.fillStyle = "#fff";
+      c.font = "11px sans-serif";
+      c.fillText("?", x + 1, yy + h - 3);
+      hits.push({ read: r.id, fragment: f.id, x, y: yy, w: 10, h });
       c.restore();
       continue;
     }
@@ -886,19 +988,20 @@ function drawPair(c, f, y, w, ppb) {
         x = xPosition(p, w),
         end = xPosition(p + n, w);
       if ("M=X".includes(op)) {
-        c.fillStyle = r.flags & 16 ? "#a5bfc5" : "#9fbed4";
-        if (hasSequence(r)) c.fillRect(x, yy, Math.max(1, end - x), 7);
+        c.fillStyle = "#aaaeb2";
+        if (hasSequence(r) && r.mq !== 0)
+          c.fillRect(x, yy, Math.max(1, end - x), h);
         else {
-          c.strokeStyle = "#acb9c3";
-          c.strokeRect(x, yy, Math.max(1, end - x), 7);
+          c.strokeStyle = "#a8adb2";
+          c.strokeRect(x, yy, Math.max(1, end - x), h);
         }
         hits.push({
           read: r.id,
           fragment: f.id,
           x,
-          y: yy - 3,
+          y: yy,
           w: Math.max(3, end - x),
-          h: 13,
+          h,
         });
         if (hasSequence(r))
           for (let j = 0; j < n; j++) {
@@ -909,111 +1012,145 @@ function drawPair(c, f, y, w, ppb) {
             if (xx < leftMargin() - ppb || xx > w) continue;
             const mismatch = ref && b !== ref && b !== "N";
             if (mismatch) {
-              c.fillStyle = colors[b] || "#777";
-              const low =
-                r.qual?.length && r.qual[q + j] < model.settings.baseq;
-              c.globalAlpha *= low ? 0.45 : 1;
-              c.fillRect(xx, yy, Math.max(1.5, ppb), 7);
-              if (low) c.globalAlpha /= 0.45;
+              const a = c.globalAlpha;
+              if (r.qual?.length && r.qual[q + j] < model.settings.baseq)
+                c.globalAlpha *= 0.4;
+              c.fillStyle = colors[b] || "#888";
+              c.fillRect(xx, yy, Math.max(1.5, ppb), h);
+              c.globalAlpha = a;
             }
-            if (ppb >= 9) {
-              c.fillStyle = mismatch ? colors[b] || "#777" : "#4f6d80";
-              c.font = "9px ui-monospace,monospace";
-              c.fillText(b, xx + 1, yy + 7);
+            if (ppb >= 10) {
+              c.fillStyle = mismatch ? "#fff" : "#f7f7f7";
+              c.font = `bold ${Math.min(14, h - 3)}px ui-monospace,monospace`;
+              c.fillText(b, xx + 1, yy + h - 3);
             }
           }
       } else if (op === "I") {
         c.fillStyle = "#9465b9";
+        c.fillRect(x - 1.5, yy, 3, h);
         c.beginPath();
-        c.moveTo(x, yy + 7);
-        c.lineTo(x - 4, yy - 2);
-        c.lineTo(x + 4, yy - 2);
+        c.moveTo(x, yy + 5);
+        c.lineTo(x - 5, yy);
+        c.lineTo(x + 5, yy);
         c.fill();
-        if (ppb > 2) {
-          c.font = "8px sans-serif";
-          c.fillText("+" + n, x + 4, yy + 5);
+        if (ppb > 3) {
+          c.fillStyle = "#fff";
+          c.font = "10px sans-serif";
+          c.fillText("+" + n, x + 4, yy + h - 3);
         }
         hits.push({
           read: r.id,
           fragment: f.id,
           x: x - 5,
-          y: yy - 5,
+          y: yy,
           w: 12,
-          h: 16,
+          h,
           detail: `Insertion at ${p + 1}: ${hasSequence(r) ? r.seq.slice(q, q + n) : "sequence unavailable"}`,
         });
       } else if (op === "D" || op === "N") {
-        c.strokeStyle = op === "D" ? "#c76175" : "#a7b6c2";
-        c.setLineDash(op === "N" ? [2, 3] : []);
+        c.strokeStyle = op === "D" ? "#444" : "#a1abb3";
+        c.lineWidth = op === "D" ? 2 : 1;
+        c.setLineDash(op === "N" ? [3, 2] : []);
         c.beginPath();
-        c.moveTo(x, yy + 3);
-        c.lineTo(end, yy + 3);
+        c.moveTo(x, center);
+        c.lineTo(end, center);
         c.stroke();
         c.setLineDash([]);
-        if (end - x > 18) {
-          c.fillStyle = c.strokeStyle;
-          c.font = "8px sans-serif";
-          c.fillText(`${n}${op}`, x + 2, yy + 1);
+        if (end - x > 20) {
+          c.fillStyle = "#657781";
+          c.font = "10px sans-serif";
+          c.fillText(`${n}${op}`, x + 2, yy + h - 3);
         }
+        hits.push({
+          read: r.id,
+          fragment: f.id,
+          x,
+          y: yy,
+          w: Math.max(3, end - x),
+          h,
+          detail: `${n}${op} at ${p + 1}`,
+        });
       } else if (op === "S" && hasSequence(r)) {
-        const leading = q === 0,
-          from = leading ? p - n : p;
-        drawClip(
-          c,
-          {
-            pos: p,
-            side: leading ? "left" : "right",
-            seq: r.seq.slice(q, q + n),
-          },
-          yy,
-          w,
-          ppb,
-        );
+        const side = q === 0 ? "left" : "right",
+          clip = { pos: p, side, seq: r.seq.slice(q, q + n) };
+        drawClip(c, clip, yy, w, ppb);
+        const from = side === "left" ? p - n : p;
         hits.push({
           read: r.id,
           fragment: f.id,
           x: xPosition(from, w),
-          y: yy - 4,
+          y: yy,
           w: Math.max(6, n * ppb),
-          h: 14,
-          detail: `${leading ? "Leading" : "Trailing"} soft clip (${n} bp, unaligned): ${r.seq.slice(q, q + n)}`,
+          h,
+          detail: `${side === "left" ? "Leading" : "Trailing"} soft clip (${n} bp, unaligned): ${clip.seq}`,
         });
       }
     }
-    c.fillStyle = r.flags & 16 ? "#718f98" : "#668da6";
+    c.strokeStyle = "#747c82";
+    c.lineWidth = 1;
     const arrow = xPosition(r.flags & 16 ? r.start : r.end, w),
       dir = r.flags & 16 ? -1 : 1;
     c.beginPath();
-    c.moveTo(arrow, yy + 3.5);
-    c.lineTo(arrow - dir * 4, yy);
-    c.lineTo(arrow - dir * 4, yy + 7);
-    c.fill();
+    c.moveTo(arrow, yy);
+    c.lineTo(arrow + dir * 4, center);
+    c.lineTo(arrow, yy + h);
+    c.stroke();
     c.restore();
   }
 }
 function drawClip(c, clip, yy, w, ppb) {
-  const n = clip.seq.length,
-    from = clip.side === "left" ? clip.pos - n : clip.pos,
+  const h = readHeight(),
+    from = clip.side === "left" ? clip.pos - clip.seq.length : clip.pos,
     x = xPosition(from, w);
-  c.fillStyle = "#bda4cf";
-  c.globalAlpha *= 0.6;
-  c.fillRect(x, yy, Math.max(2, n * ppb), 7);
-  if (ppb >= 9)
-    for (let j = 0; j < n; j++) {
-      c.fillStyle = colors[clip.seq[j]] || "#9475aa";
-      c.font = "9px ui-monospace,monospace";
-      c.fillText(clip.seq[j], xPosition(from + j, w) + 1, yy + 7);
+  c.fillStyle = "#b7a1ce";
+  c.globalAlpha *= 0.65;
+  c.fillRect(x, yy, Math.max(2, clip.seq.length * ppb), h);
+  c.globalAlpha /= 0.65;
+  if (ppb >= 10) {
+    c.font = `${Math.min(14, h - 3)}px ui-monospace,monospace`;
+    for (let j = 0; j < clip.seq.length; j++) {
+      c.fillStyle = colors[clip.seq[j]] || "#7d639c";
+      c.fillText(clip.seq[j], xPosition(from + j, w) + 1, yy + h - 3);
     }
-  c.globalAlpha /= 0.6;
-  if (ppb < 8) {
-    c.fillStyle = "#9465b9";
-    c.font = "8px sans-serif";
-    c.fillText(`${n}S`, x, yy - 2);
   }
 }
 function drawConsensus(c, g, y, w, ppb) {
-  const s = model.groupSummary(g);
-  let previous = null;
+  const s = model.groupSummary(g),
+    h = readHeight(),
+    yy = y + 5;
+  // Fill covered runs once so fractional per-base edges cannot produce a
+  // barcode appearance at overview zoom. Unknown gaps remain unpainted.
+  let runStart = null,
+    runEnd = null;
+  const fillRun = () => {
+    if (runStart !== null) {
+      c.fillStyle = color(g.id);
+      c.fillRect(
+        xPosition(runStart, w),
+        yy,
+        Math.max(1, xPosition(runEnd, w) - xPosition(runStart, w)),
+        h,
+      );
+      runStart = null;
+    }
+  };
+  for (const call of s.bases) {
+    const deletion = !call.conflict && call.values[0].value === "-";
+    if (deletion) {
+      fillRun();
+      continue;
+    }
+    if (runStart === null) {
+      runStart = call.pos;
+      runEnd = call.pos + 1;
+    } else if (call.pos === runEnd) runEnd++;
+    else {
+      fillRun();
+      runStart = call.pos;
+      runEnd = call.pos + 1;
+    }
+  }
+  fillRun();
   for (const call of s.bases) {
     const p = call.pos,
       x = xPosition(p, w),
@@ -1021,75 +1158,73 @@ function drawConsensus(c, g, y, w, ppb) {
       ref = model.reference[p - model.region.start];
     if (x < leftMargin() - ppb || x > w) continue;
     if (b === "-") {
-      c.strokeStyle = "#c05d73";
+      c.strokeStyle = "#454545";
+      c.lineWidth = 2;
       c.beginPath();
-      c.moveTo(x, y + 20);
-      c.lineTo(x + ppb, y + 20);
+      c.moveTo(x, yy + h / 2);
+      c.lineTo(x + ppb, yy + h / 2);
       c.stroke();
     } else {
       c.fillStyle = call.conflict
-        ? "#e3af50"
+        ? "#dda84e"
         : b !== ref
-          ? colors[b] || "#a68"
+          ? colors[b] || "#999"
           : color(g.id);
-      c.globalAlpha *= b === ref ? 0.55 : 1;
-      c.fillRect(x, y + 14, Math.max(1.3, ppb), 12);
-      if (b === ref) c.globalAlpha /= 0.55;
-      if (ppb >= 9) {
-        c.fillStyle = b === ref ? "#365f76" : colors[b] || "#a37720";
-        c.font = "10px ui-monospace,monospace";
-        c.fillText(b, x + 1, y + 24);
+      if (call.conflict || b !== ref) c.fillRect(x, yy, Math.max(1.3, ppb), h);
+      if (ppb >= 10) {
+        c.fillStyle = "#fff";
+        c.font = `bold ${Math.min(14, h - 3)}px ui-monospace,monospace`;
+        c.fillText(b, x + 1, yy + h - 3);
       }
     }
-    previous = p;
   }
   for (const ins of s.insertions) {
-    const x = xPosition(ins.pos, w);
-    c.fillStyle = ins.conflict ? "#d6a04a" : "#9465b9";
-    c.beginPath();
-    c.moveTo(x, y + 14);
-    c.lineTo(x - 5, y + 6);
-    c.lineTo(x + 5, y + 6);
-    c.fill();
+    c.fillStyle = ins.conflict ? "#d9a74b" : "#9465b9";
+    c.fillRect(xPosition(ins.pos, w) - 1.5, yy, 3, h);
   }
-  for (const clip of s.clips) drawClip(c, clip, y + 15, w, ppb);
+  for (const clip of s.clips) drawClip(c, clip, yy, w, ppb);
   if (!s.bases.length) {
-    c.fillStyle = "#9cabb5";
-    c.font = "10px sans-serif";
+    c.fillStyle = "#8b9ca7";
+    c.font = "11px sans-serif";
     c.fillText(
-      "No callable consensus at current evidence settings",
+      "No callable consensus in current evidence",
       leftMargin() + 8,
-      y + 23,
+      yy + h - 3,
     );
   }
   if (s.conflicts.length) {
-    c.fillStyle = "#a27726";
-    c.font = "9px sans-serif";
-    c.fillText(`${s.conflicts.length} conflicts`, w - 85, y + 36);
+    c.fillStyle = "#af791f";
+    c.font = "10px sans-serif";
+    c.fillText(`${s.conflicts.length} conflicts`, w - 90, y + 29);
   }
 }
-
 function rowAt(e) {
-  const box = pile.getBoundingClientRect();
-  return {
-    index: Math.floor(
-      (e.clientY - box.top + $("readScroll").scrollTop) / rowHeight,
-    ),
-    x: e.clientX - box.left,
-    y: e.clientY - box.top,
-  };
+  const b = pile.getBoundingClientRect(),
+    x = e.clientX - b.left,
+    y = e.clientY - b.top,
+    worldY = y + $("readScroll").scrollTop,
+    hit =
+      x < leftMargin()
+        ? packed.placements.find(
+            (p) => p.header && worldY >= p.y && worldY <= p.y + p.height,
+          )
+        : pileupHit(packed, x, worldY);
+  return { index: hit?.index ?? -1, x, y, hit };
 }
+
 function chooseRow(index, shift = false) {
   const row = rows[index];
   if (!row) return;
   if (shift && anchor !== null) {
-    const a = rows.findIndex((r) => r.key === anchor);
+    const order = packed.order;
+    const target = order.indexOf(index),
+      a = order.findIndex((i) => rows[i].key === anchor);
     for (
-      let i = Math.min(a < 0 ? index : a, index);
-      i <= Math.max(a < 0 ? index : a, index);
+      let i = Math.min(a < 0 ? target : a, target);
+      i <= Math.max(a < 0 ? target : a, target);
       i++
     )
-      for (const id of rows[i].members) model.selection.add(id);
+      for (const id of rows[order[i]].members) model.selection.add(id);
   } else {
     const all =
       row.members.length && row.members.every((id) => model.selection.has(id));
@@ -1109,51 +1244,87 @@ function chooseRow(index, shift = false) {
 }
 let drag = null;
 pile.onpointerdown = (e) => {
-  if (!model) return;
+  if (!model || e.button !== 0) return;
+  closeReadMenu();
   pile.focus();
   pile.setPointerCapture(e.pointerId);
+  const b = pile.getBoundingClientRect();
   drag = {
     x: e.clientX,
+    y: e.clientY,
     start: view.start,
     span: view.end - view.start,
     moved: false,
+    select: e.shiftKey,
   };
+  if (e.shiftKey)
+    boxSelection = {
+      x: e.clientX - b.left,
+      y: e.clientY - b.top,
+      endX: e.clientX - b.left,
+      endY: e.clientY - b.top,
+    };
 };
 pile.onpointermove = (e) => {
   if (drag) {
-    const dx = e.clientX - drag.x;
-    if (Math.abs(dx) > 4) drag.moved = true;
+    const dx = e.clientX - drag.x,
+      dy = e.clientY - drag.y;
+    if (Math.abs(dx) + (drag.select ? Math.abs(dy) : 0) > 4) drag.moved = true;
     if (drag.moved) {
-      $("tooltip").hidden = true;
-      setView(
-        drag.start - (dx / (pile.clientWidth - leftMargin() - 12)) * drag.span,
-        drag.span,
-      );
+      if (drag.select) {
+        const b = pile.getBoundingClientRect();
+        boxSelection.endX = e.clientX - b.left;
+        boxSelection.endY = e.clientY - b.top;
+        drawReads();
+      } else
+        setView(
+          drag.start -
+            (dx / (pile.clientWidth - leftMargin() - 12)) * drag.span,
+          drag.span,
+        );
     }
     return;
   }
-  tooltip(e);
+  if (hoverDetails && $("readMenu").hidden) tooltip(e);
 };
 pile.onpointerup = (e) => {
   if (!drag) return;
-  if (!drag.moved) {
+  if (drag.select && drag.moved && boxSelection) {
+    const b = boxSelection,
+      scroll = $("readScroll").scrollTop,
+      x1 = Math.min(b.x, b.endX),
+      x2 = Math.max(b.x, b.endX),
+      y1 = Math.min(b.y, b.endY) + scroll,
+      y2 = Math.max(b.y, b.endY) + scroll;
+    for (const p of packed.placements)
+      if (p.x1 <= x2 && p.x2 >= x1 && p.y <= y2 && p.y + p.height >= y1)
+        for (const id of rows[p.index].members) model.selection.add(id);
+    anchor = null;
+  } else if (!drag.moved) {
     const { index, x } = rowAt(e),
       row = rows[index];
-    if (row?.kind === "group" && x >= 25 && x <= 43) {
+    if (row?.kind === "group" && x < leftMargin()) {
       if (model.expanded.has(row.group.id)) model.expanded.delete(row.group.id);
       else model.expanded.add(row.group.id);
       rows = model.rows($("sort").value, site, $("showHidden").checked);
       anchor = null;
       sizeRows();
-      drawReads();
       renderAccessible();
     } else chooseRow(index, e.shiftKey);
   }
+  boxSelection = null;
   drag = null;
+  drawReads();
+  buttons();
+  renderAccessible();
 };
-pile.onpointercancel = () => (drag = null);
+pile.onpointercancel = () => {
+  drag = null;
+  boxSelection = null;
+  drawReads();
+};
 pile.onpointerleave = () => {
-  $("tooltip").hidden = true;
+  if (!contextPoint) $("tooltip").hidden = true;
   lastTooltip = "";
 };
 pile.onwheel = (e) => {
@@ -1172,22 +1343,93 @@ pile.onwheel = (e) => {
   );
 };
 $("readScroll").onscroll = () => {
+  closeReadMenu();
   drawReads();
-  $("tooltip").hidden = true;
   renderAccessible();
 };
 $("selectVisible").onclick = () => {
   if (!model) return;
-  const first = Math.floor($("readScroll").scrollTop / rowHeight),
-    last = Math.min(rows.length, first + Math.ceil(570 / rowHeight));
-  for (const row of rows.slice(first, last))
-    for (const id of row.members) model.selection.add(id);
+  const scroll = $("readScroll").scrollTop,
+    height = viewportHeight();
+  for (const p of packed.placements)
+    if (p.y + p.height >= scroll && p.y < scroll + height)
+      for (const id of rows[p.index].members) model.selection.add(id);
   drawReads();
   buttons();
   renderAccessible();
 };
-function tooltip(e) {
+function closeReadMenu() {
+  contextPoint = null;
+  $("readMenu").hidden = true;
+  $("tooltip").hidden = true;
+  lastTooltip = "";
+}
+function readMenu(e) {
   if (!model) return;
+  e.preventDefault();
+  drag = null;
+  boxSelection = null;
+  const { index } = rowAt(e);
+  if (index < 0) {
+    closeReadMenu();
+    return;
+  }
+  const row = rows[index],
+    menu = $("readMenu");
+  contextPoint = { clientX: e.clientX, clientY: e.clientY };
+  menu.replaceChildren();
+  const title = el(
+    "div",
+    row.kind === "group" ? row.group.name : row.fragment.name,
+    "menu-title",
+  );
+  menu.append(title);
+  const option = (name, fn) => {
+    const b = el("button", name);
+    b.setAttribute("role", "menuitem");
+    b.onclick = () => {
+      menu.hidden = true;
+      fn();
+    };
+    menu.append(b);
+  };
+  option(row.kind === "group" ? "Haplotype details" : "Read details", () => {
+    tooltip(contextPoint, true);
+    inspect(
+      row.kind === "group"
+        ? { kind: "group", id: row.group.id }
+        : { kind: "fragment", id: row.fragment.id },
+    );
+  });
+  option(
+    hoverDetails ? "Disable hover details" : "Enable hover details",
+    () => {
+      hoverDetails = !hoverDetails;
+      closeReadMenu();
+    },
+  );
+  option(
+    row.members.every((id) => model.selection.has(id))
+      ? "Deselect this pair"
+      : "Select this pair",
+    () => {
+      chooseRow(index, false);
+      closeReadMenu();
+    },
+  );
+  menu.hidden = false;
+  $("tooltip").hidden = true;
+  menu.style.left = Math.max(8, Math.min(innerWidth - 245, e.clientX)) + "px";
+  menu.style.top = Math.max(8, Math.min(innerHeight - 170, e.clientY)) + "px";
+  menu.querySelector("button")?.focus();
+}
+pile.oncontextmenu = readMenu;
+document.addEventListener("pointerdown", (e) => {
+  if (!$("readMenu").contains(e.target) && e.target !== pile) closeReadMenu();
+});
+
+function tooltip(e, force = false) {
+  if (!model || (!hoverDetails && !force)) return;
   const { index, x, y } = rowAt(e),
     row = rows[index];
   if (!row) {
@@ -1321,7 +1563,7 @@ function renderGroups() {
       const i = rows.findIndex(
         (r) => r.kind === "group" && r.group.id === g.id,
       );
-      $("readScroll").scrollTop = Math.max(0, i * rowHeight);
+      $("readScroll").scrollTop = Math.max(0, packed.byItem.get(i)?.y || 0);
     };
     root.append(button);
   }
@@ -1593,7 +1835,10 @@ $("tree").onclick = (e) => {
   }
 };
 $("tree").onmousemove = (e) => {
-  if (!model) return;
+  if (!model || !hoverDetails) {
+    $("tree").title = "";
+    return;
+  }
   const b = $("tree").getBoundingClientRect(),
     hit = treeHits.find((h) => Math.abs(h.y - (e.clientY - b.top)) < 13);
   if (hit) {
@@ -1609,36 +1854,47 @@ $("tree").onmousemove = (e) => {
         .join("; ")}`;
   } else $("tree").title = "";
 };
-function renderAccessible(page = null) {
+function renderAccessible(page = 0) {
   const root = $("accessibleRows");
   if (!model) {
     root.replaceChildren();
     return;
   }
-  const start =
-      page === null
-        ? Math.floor($("readScroll").scrollTop / rowHeight)
-        : page * 50,
-    end = Math.min(start + 50, rows.length);
+  const order = packed.order,
+    start = page * 50,
+    end = Math.min(start + 50, order.length);
   root.replaceChildren(
-    el("span", `${start + 1}–${end} of ${rows.length} rows`),
+    el(
+      "span",
+      order.length
+        ? `${start + 1}–${end} of ${order.length} displayed items`
+        : "No displayed items",
+    ),
   );
   if (start > 0) {
     const b = el("button", "Previous 50");
-    b.onclick = () => renderAccessible(Math.max(0, Math.floor(start / 50) - 1));
+    b.onclick = () => renderAccessible(page - 1);
     root.append(b);
   }
-  if (end < rows.length) {
+  if (end < order.length) {
     const b = el("button", "Next 50");
-    b.onclick = () => renderAccessible(Math.floor(start / 50) + 1);
+    b.onclick = () => renderAccessible(page + 1);
     root.append(b);
   }
-  for (let i = start; i < end; i++) {
+  for (const i of order.slice(start, end)) {
     const row = rows[i],
+      p = packed.byItem.get(i),
       b = el(
         "button",
         `${row.kind === "group" ? row.group.name : row.fragment.name}${row.members.some((id) => model.selection.has(id)) ? " ✓" : ""}`,
       );
+    b.dataset.item = i;
+    b.dataset.x = Math.max(
+      leftMargin() + 5,
+      Math.min(pile.clientWidth - 18, (p.x1 + p.x2) / 2),
+    );
+    b.dataset.y = p.y + p.height / 2;
+    b.dataset.key = row.key;
     b.setAttribute(
       "aria-pressed",
       String(
@@ -1650,13 +1906,16 @@ function renderAccessible(page = null) {
     root.append(b);
   }
 }
+
 document.onkeydown = (e) => {
   if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
     e.preventDefault();
     (e.shiftKey ? $("redo") : $("undo")).click();
-  } else if (e.key === "Escape") $("clearSelection").click();
-  else if (e.shiftKey && e.key.toLowerCase() === "m") {
+  } else if (e.key === "Escape") {
+    closeReadMenu();
+    $("clearSelection").click();
+  } else if (e.shiftKey && e.key.toLowerCase() === "m") {
     $("merge").click();
     e.preventDefault();
   } else if (e.shiftKey && e.key.toLowerCase() === "h") {
@@ -1671,10 +1930,12 @@ document.onkeydown = (e) => {
   }
 };
 new ResizeObserver(() => {
+  sizeRows();
   drawTrack();
   drawReads();
   drawTree();
-}).observe(pile);
+}).observe($("readScroll"));
+syncChrome();
 startWorker();
 drawTrack();
 drawReads();

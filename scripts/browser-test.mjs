@@ -1,7 +1,60 @@
 import { chromium } from "playwright-core";
 import { resolve } from "node:path";
+import { writeFile, mkdir, readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { fixture } from "./fixtures.mjs";
+// Deliberately separated pairs test shared-lane selection, not just deep
+// coverage where every template happens to overlap every other template.
+const reference = "A".repeat(800),
+  reads = [];
+for (const [name, start, duplicate] of [
+  ["left", 1020, false],
+  ["right", 1240, false],
+  ["overlap", 1060, false],
+  ["clipped", 1440, false],
+  ["duplicate", 1020, true],
+]) {
+  for (const [offset, flags] of [
+    [0, 99],
+    [40, 147],
+  ]) {
+    let seq = "A".repeat(60),
+      cigar = "60M";
+    if (name === "left" && offset === 0)
+      seq = seq.slice(0, 30) + "C" + seq.slice(31);
+    if (name === "clipped" && offset === 0) {
+      seq = "TGCA" + seq;
+      cigar = "4S60M";
+    }
+    reads.push({
+      id: reads.length,
+      name,
+      start: start + offset,
+      end: start + offset + 60,
+      seq,
+      cigar,
+      qual: Array(seq.length).fill(35),
+      flags: flags | (duplicate ? 1024 : 0),
+      mq: 60,
+      rg: "synthetic",
+      sample: "synthetic",
+      mate: start + (offset ? 0 : 40),
+      mateRef: 0,
+    });
+  }
+}
+const data = fixture({
+  reads,
+  reference,
+  region: { chr: "synthetic", start: 1000, end: 1800 },
+});
+await mkdir("/tmp/phase-packed-tests", { recursive: true });
+for (const [ext, bytes] of Object.entries(data))
+  await writeFile(
+    "/tmp/phase-packed-tests/packed." +
+      ({ twobit: "2bit", fasta: "fa", fai: "fa.fai" }[ext] || ext),
+    bytes,
+  );
 const browser = await chromium.launch({
   executablePath:
     process.env.CHROME_PATH ||
@@ -14,11 +67,11 @@ try {
       viewport: { width: 1600, height: 1100 },
     }),
     errors = [],
-    network = [],
+    requests = [],
     consoleErrors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("request", (r) => {
-    if (/^https?:/.test(r.url())) network.push(r.url());
+    if (/^https?:/.test(r.url())) requests.push(r.url());
   });
   page.on("console", (m) => {
     if (m.type() === "error") consoleErrors.push(m.text());
@@ -27,175 +80,227 @@ try {
     const original = CanvasRenderingContext2D.prototype.fillRect;
     CanvasRenderingContext2D.prototype.fillRect = function (x, y, w, h) {
       if (this.canvas.id === "pileup") {
-        if (x === 0 && y === 0 && h === 570) window.__rects = [];
+        if (x === 0 && y === 0 && this.fillStyle === "#ffffff")
+          window.__rects = [];
         (window.__rects ??= []).push({ x, y, w, h, color: this.fillStyle });
       }
       return original.call(this, x, y, w, h);
     };
   });
   await page.goto("file://" + resolve("index.html"));
-  assert.equal(await page.title(), "Phase · manual haplotype workspace");
-  assert.equal(await page.locator('a[href="archive2/index.html"]').count(), 1);
-  await page
-    .locator("#demo")
-    .evaluate((e) => (e.closest("details").open = true));
-  await page.click("#demo");
+  await page.setInputFiles("#bam", "/tmp/phase-packed-tests/packed.bam");
+  await page.setInputFiles("#index", "/tmp/phase-packed-tests/packed.bai");
+  await page.setInputFiles("#reference", "/tmp/phase-packed-tests/packed.2bit");
+  await page.click("#open");
   await page.waitForFunction(() =>
     document
       .querySelector("#status")
-      .textContent.includes("Loaded 52 read pairs"),
+      .textContent.includes("Opened indexed BAM"),
   );
-  assert.match(await page.textContent("#counts"), /0 manual haplotypes/);
-  assert.equal(await page.locator(".group-chip").count(), 0);
-  assert.equal(
-    await page.locator("#pileup").getAttribute("data-row-count"),
-    "52",
+  await page.fill("#region", "synthetic:1001-1800");
+  await page.click("#load");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#status")
+      .textContent.includes("Loaded 5 read pairs"),
   );
-  await page.selectOption("#sort", "name");
   const canvas = page.locator("#pileup");
-  await canvas.scrollIntoViewIfNeeded();
-  const rowClick = async (index, shift = false, x = 65) => {
-    await canvas.scrollIntoViewIfNeeded();
-    await page.locator("#readScroll").evaluate((e, index) => {
-      if (index * 42 < e.scrollTop || index * 42 + 35 > e.scrollTop + 570)
-        e.scrollTop = index * 42;
-    }, index);
-    const scroll = await page
-      .locator("#readScroll")
-      .evaluate((e) => e.scrollTop);
-    const box = await canvas.boundingBox();
+  await page.waitForFunction(
+    () => document.querySelector("#pileup").dataset.laneCount === "2",
+  );
+  assert.match(
+    await page.textContent("#rowCount"),
+    /2 packed lanes · 4 visible pairs · 1 duplicate-flagged/,
+  );
+  assert.equal(await page.inputValue("#readSize"), "18");
+  assert.equal(await page.locator("body").getAttribute("class"), "top-compact");
+  const beforeWidth = (await canvas.boundingBox()).width;
+  assert.ok(beforeWidth > 1400);
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await page.screenshot({
+    path: "/tmp/phase-packed-initial.png",
+    fullPage: true,
+  });
+  const geometry = await page.evaluate(() =>
+    Object.fromEntries(
+      ["pileup", "readScroll"].map((id) => [
+        id,
+        document.getElementById(id).getBoundingClientRect().height,
+      ]),
+    ),
+  );
+
+  assert.ok(geometry.pileup > 450);
+  assert.ok(Math.abs(geometry.pileup - geometry.readScroll) < 2);
+  assert.equal(await page.locator("#inspector").isVisible(), false);
+  assert.equal(await page.locator("#bam").isVisible(), false);
+  const info = async (name) => {
+    await page.locator("#accessible").evaluate((e) => (e.open = true));
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const button = page
+      .locator("#accessibleRows button")
+      .filter({ hasText: new RegExp("^" + name + "(?: ✓)?$") });
+    const result = await button.evaluate((e) => ({
+      x: +e.dataset.x,
+      y: +e.dataset.y,
+      key: e.dataset.key,
+    }));
+    await page.locator("#accessible").evaluate((e) => (e.open = false));
+    await page.waitForFunction(
+      () => document.querySelector("#pileup").clientHeight > 100,
+    );
+    return result;
+  };
+  const point = async (name) => {
+    const p = await info(name);
+    await page.locator("#readScroll").evaluate((e, y) => {
+      if (y < e.scrollTop || y > e.scrollTop + e.clientHeight - 10)
+        e.scrollTop = Math.max(0, y - 30);
+    }, p.y);
+    const b = await canvas.boundingBox(),
+      scroll = await page.locator("#readScroll").evaluate((e) => e.scrollTop);
+    return { ...p, screenX: b.x + p.x, screenY: b.y + p.y - scroll };
+  };
+  const left = await point("left"),
+    right = await point("right"),
+    overlap = await point("overlap");
+  assert.equal(left.y, right.y);
+  assert.notEqual(left.y, overlap.y);
+  // Plain movement never opens details by default. Right-click first offers a
+  // menu; details and optional hover behavior are explicit user actions.
+  await page.mouse.move(left.screenX, left.screenY);
+  assert.equal(await page.locator("#tooltip").isVisible(), false);
+  await page.mouse.click(left.screenX, left.screenY, { button: "right" });
+  assert.equal(await page.locator("#readMenu").isVisible(), true);
+  assert.equal(await page.locator("#tooltip").isVisible(), false);
+  await page
+    .getByRole("menuitem", { name: "Read details", exact: true })
+    .click();
+  assert.match(await page.textContent("#tooltip"), /MAPQ: 60/);
+  await page.click("#clearSelection", { force: true });
+  const p = await point("left");
+  await page.mouse.click(p.screenX, p.screenY, { button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Enable hover details", exact: true })
+    .click();
+  await page.mouse.move(p.screenX + 2, p.screenY);
+  await page.waitForFunction(() => !document.querySelector("#tooltip").hidden);
+  await page.mouse.click(p.screenX, p.screenY, { button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Disable hover details", exact: true })
+    .click();
+  await page.mouse.move(p.screenX + 3, p.screenY);
+  assert.equal(await page.locator("#tooltip").isVisible(), false);
+  // Shift-click two pairs sharing the same lane selects those two pairs,
+  // without accidentally selecting the overlapping pair on the next lane.
+  const clickPair = async (name, shift = false) => {
+    const p = await point(name);
     if (shift) await page.keyboard.down("Shift");
-    await page.mouse.click(box.x + x, box.y + index * 42 - scroll + 20);
+    await page.mouse.click(p.screenX, p.screenY);
     if (shift) await page.keyboard.up("Shift");
   };
-  // Real shift-click gestures cover multiple physical pairs, then merge them.
-  await rowClick(16);
-  await rowClick(27, true);
-  assert.equal(await page.textContent("#selected"), "12 pairs selected");
-  await page.fill("#hapName", "Founder reference");
+  await clickPair("left");
+  await clickPair("right", true);
+  assert.equal(await page.textContent("#selected"), "2 pairs selected");
+  await page.fill("#hapName", "Manual H1");
   await page.click("#merge");
-  assert.equal(await page.locator(".group-chip").count(), 1);
+  assert.match(await page.textContent("#counts"), /1 manual haplotypes/);
+  await page.click("#toggleAnalysis");
+  assert.equal(await page.locator("#inspector").isVisible(), true);
   assert.match(
     await page.textContent("#inspector"),
-    /12 included \/ 12 assigned pairs/,
-  );
-  await rowClick(1);
-  await rowClick(3, true);
-  assert.equal(await page.textContent("#selected"), "3 pairs selected");
-  await page.click("#hide");
-  assert.match(await page.textContent("#counts"), /3 hidden pairs/);
-  await page.click("#undo");
-  assert.match(await page.textContent("#counts"), /0 hidden pairs/);
-  await page.click("#redo");
-  assert.match(await page.textContent("#counts"), /3 hidden pairs/);
-  await page.click("#restore");
-  assert.match(await page.textContent("#counts"), /0 hidden pairs/);
-  await rowClick(17);
-  await rowClick(28, true);
-  await page.fill("#hapName", "Shared SNPs");
-  await page.click("#merge");
-  assert.equal(await page.locator(".group-chip").count(), 2);
-  assert.match(
-    await page.textContent("#inspector"),
-    /Site VAF 24\/36 \(66.7%\)/,
+    /2 included \/ 2 assigned pairs/,
   );
   assert.match(
     await page.textContent("#inspector"),
-    /Within group 12\/12 \(100.0%\)/,
+    /Site VAF 1\/1 \(100.0%\)/,
   );
-  // A collapsed SNP uses the same original genomic column as its raw members.
-  await page.locator("#readScroll").evaluate((e) => (e.scrollTop = 0));
+  assert.match(await page.textContent("#treeSummary"), /1 manual haplotypes/);
+  const narrower = (await canvas.boundingBox()).width;
+  assert.ok(narrower < beforeWidth - 200);
+  await page.click("#toggleAnalysis");
+  assert.ok((await canvas.boundingBox()).width > narrower + 200);
+  // Group markers and raw markers have the same original CIGAR columns.
+  await page.evaluate(() => new Promise(requestAnimationFrame));
   await page.waitForFunction(
-    () => document.querySelector("#pileup").dataset.firstRow === "0",
+    () =>
+      Math.abs(
+        document.querySelector("#pileup").width / devicePixelRatio -
+          document.querySelector("#pileup").clientWidth,
+      ) < 1,
   );
-  const at = await page.evaluate(() => {
+  const pos = await page.evaluate(() => {
     const c = document.querySelector("#pileup"),
-      left = c.clientWidth < 570 ? 152 : 210,
+      left = +c.dataset.leftMargin,
       x =
         left +
-        ((1120 - +c.dataset.viewStart) /
+        ((1050 - +c.dataset.viewStart) /
           (+c.dataset.viewEnd - +c.dataset.viewStart)) *
           (c.clientWidth - left - 12);
     return { x, rects: window.__rects };
   });
   assert.ok(
-    at.rects.some(
-      (r) => r.color === "#27915e" && Math.abs(r.x - at.x) < 0.05 && r.y === 56,
-    ),
+    pos.rects.some((r) => r.color === "#3386c9" && Math.abs(r.x - pos.x) < 0.1),
   );
-  // Conflicting reference/ALT groups cannot merge, even when explicitly selected.
-  await rowClick(0);
-  await rowClick(1, true);
-  await page.click("#merge");
-  assert.match(
-    await page.textContent("#status"),
-    /Cannot merge: contradictory/,
-  );
-  assert.equal(await page.locator(".group-chip").count(), 2);
-  await page.click("#clearSelection");
-  // Expand and verify MAPQ and legal soft clips survive in the original pair.
-  await page.locator(".group-chip").first().click();
+  await page.click("#toggleAnalysis");
   await page
     .getByRole("button", { name: "Expand read pairs", exact: true })
     .click();
-  await canvas.scrollIntoViewIfNeeded();
-  const bb = await canvas.boundingBox();
-  const x = await page.evaluate(() => {
-    const c = document.querySelector("#pileup"),
-      left = c.clientWidth < 570 ? 152 : 210;
-    return (
-      left +
-      ((1080 - +c.dataset.viewStart) /
-        (+c.dataset.viewEnd - +c.dataset.viewStart)) *
-        (c.clientWidth - left - 12)
-    );
-  });
-  await page.mouse.move(bb.x + x, bb.y + 42 + 15);
-  await page.waitForFunction(() => !document.querySelector("#tooltip").hidden);
-  assert.match(await page.textContent("#tooltip"), /MAPQ: 42/);
-  assert.match(await page.textContent("#tooltip"), /4S220M3S/);
-  assert.match(await page.textContent("#tooltip"), /R2 MAPQ 58/);
-  await page.mouse.move(bb.x + bb.width - 10, bb.y + 5);
-  await page
-    .locator("#readScroll")
-    .evaluate((e) => (e.scrollTop = e.scrollHeight));
-  await page.waitForFunction(
-    () => +document.querySelector("#pileup").dataset.firstRow > 0,
-  );
-  // Zoom and direct dragging use a shared reference/read axis.
-  await page.click("#zoomIn");
-  const before = +(await canvas.getAttribute("data-view-start"));
-  await canvas.scrollIntoViewIfNeeded();
-  const pan = await canvas.boundingBox();
-  await page.mouse.move(pan.x + pan.width * 0.7, pan.y + 100);
-  await page.mouse.down();
-  await page.mouse.move(pan.x + pan.width * 0.7 - 60, pan.y + 100, {
-    steps: 5,
-  });
-  await page.mouse.up();
-  assert.ok(+(await canvas.getAttribute("data-view-start")) > before);
-  await page.screenshot({ path: "/tmp/phase-v3-desktop.png", fullPage: true });
-  // Save/restore edits and explicit sequence exports.
-  const saved = page.waitForEvent("download");
-  await page.click("#save");
-  const d = await saved;
-  const savedText = await readFile(await d.path(), "utf8");
-  assert.equal(JSON.parse(savedText).groups.length, 2);
-  await writeFile("/tmp/phase-v3-assignments.json", savedText);
-  const fa = page.waitForEvent("download");
-  await page.click("#fasta");
-  assert.match(await readFile(await (await fa).path(), "utf8"), />Shared_SNPs/);
+  await page.click("#toggleAnalysis");
+  const a = await info("left"),
+    b = await info("right");
+  assert.equal(a.y, b.y);
+  // Hide a selected pair with no destructive removal; undo and restore retain it.
+  await clickPair("overlap");
+  await page.click("#hide");
+  assert.match(await page.textContent("#counts"), /1 hidden pairs/);
   await page.click("#undo");
-  await page.setInputFiles("#import", "/tmp/phase-v3-assignments.json");
+  assert.match(await page.textContent("#counts"), /0 hidden pairs/);
+  await page.check("#includeDuplicates");
+  assert.match(await page.textContent("#rowCount"), /5 visible pairs/);
+  await page.uncheck("#includeDuplicates");
+  assert.match(await page.textContent("#rowCount"), /4 visible pairs/);
+  await page.selectOption("#readSize", "24");
+  await page.waitForFunction(
+    () => document.querySelector("#pileup").dataset.readHeight === "24",
+  );
+  assert.ok(
+    await page.evaluate(() =>
+      window.__rects.some((r) => r.h === 24 && r.color === "#aaaeb2"),
+    ),
+  );
+  // Each drawer and the top panel can be collapsed independently.
+  await page.click("#toggleInputs");
+  assert.equal(await page.locator("#bam").isVisible(), true);
+  await page.click("#toggleInputs");
+  const compactHeight = (await canvas.boundingBox()).height;
+  await page.click("#toggleTop");
+  assert.equal(await page.locator(".workspace-head").isVisible(), true);
   await page.waitForFunction(
     () =>
-      document.querySelector("#status").textContent.includes("assignments") ||
-      document.querySelector("#status").textContent.includes("restored"),
+      Math.abs(
+        document.querySelector("#pileup").clientHeight -
+          document.querySelector("#readScroll").clientHeight,
+      ) < 2,
   );
-  assert.equal(await page.locator(".group-chip").count(), 2);
-  // Actual BAM/BAI/CSI and 2bit/FASTA loading, missing SEQ, large somatic mixture.
+  assert.ok((await canvas.boundingBox()).height < compactHeight);
+  await page.click("#toggleTop");
+  await page.screenshot({
+    path: "/tmp/phase-packed-desktop.png",
+    fullPage: true,
+  });
+  const exported = page.waitForEvent("download");
+  await page.click("#toggleInputs");
+  await page.click("#save");
+  assert.equal(
+    JSON.parse(await readFile(await (await exported).path(), "utf8")).groups
+      .length,
+    1,
+  );
+  await page.click("#toggleInputs");
+  // Exercise the existing deep-coverage demo and a large somatic mixture with
+  // no implicit merging, as well as reference/missing-SEQ binary regressions.
   for (const [name, index, ref] of [
-    ["paired", "bai", "2bit"],
     ["record-compatibility", "csi", "2bit"],
     ["somatic-ten", "csi", "fa"],
   ]) {
@@ -225,75 +330,52 @@ try {
     await page.waitForFunction(() =>
       document.querySelector("#status").textContent.includes("Loaded "),
     );
-    assert.equal(await page.locator(".group-chip").count(), 0);
-    if (name === "paired") {
-      assert.match(
-        await page.textContent("#counts"),
-        /12 pairs\/fragments · 24 records/,
-      );
-      await page.fill("#region", "synthetic:1051-1110");
-      await page.click("#load");
-      await page.waitForFunction(() =>
-        document.querySelector("#status").textContent.includes("Loaded "),
-      );
-      assert.match(
-        await page.textContent("#counts"),
-        /12 pairs\/fragments · 24 records/,
-      );
-    }
-    if (name === "record-compatibility") {
-      assert.match(await page.textContent("#counts"), /50 records/);
-      await page
-        .locator("#readScroll")
-        .evaluate((e) => (e.scrollTop = e.scrollHeight));
-    }
+    assert.match(await page.textContent("#counts"), /0 manual haplotypes/);
     if (name === "somatic-ten")
       assert.match(
         await page.textContent("#counts"),
         /179 pairs\/fragments · 353 records/,
       );
   }
+  await page.click("#zoomIn");
+  const oldStart = +(await canvas.getAttribute("data-view-start")),
+    box = await canvas.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.7, box.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.7 - 70, box.y + 80, { steps: 5 });
+  await page.mouse.up();
+  assert.ok(+(await canvas.getAttribute("data-view-start")) > oldStart);
+  await page
+    .locator("#readScroll")
+    .evaluate((e) => (e.scrollTop = e.scrollHeight));
+  await page.waitForFunction(
+    () => +document.querySelector("#pileup").dataset.firstRow > 0,
+  );
   await page.click("#reset");
+  assert.equal(await page.textContent("#tooltip"), "");
+  assert.equal(await page.locator("#readMenu").isVisible(), false);
   assert.equal(await page.inputValue("#bam"), "");
-  assert.equal(await page.locator(".group-chip").count(), 0);
   await page.fill("#gene", "TP53");
   await page.click("#find");
-  const full = await page.inputValue("#region");
+  const gene = await page.inputValue("#region");
   await page.selectOption("#exon", "0");
-  assert.notEqual(await page.inputValue("#region"), full);
-  await page
-    .locator("#demo")
-    .evaluate((e) => (e.closest("details").open = true));
-  await page.selectOption("#scenario", "somatic");
-  await page.click("#demo");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("Loaded 179 read pairs"),
-  );
-  assert.equal(await page.locator(".group-chip").count(), 0);
+  assert.notEqual(await page.inputValue("#region"), gene);
   await page.setViewportSize({ width: 720, height: 1000 });
-  await page.screenshot({ path: "/tmp/phase-v3-mobile.png", fullPage: true });
+  await page.click("#toggleInputs");
+  await page.screenshot({
+    path: "/tmp/phase-packed-mobile.png",
+    fullPage: true,
+  });
   assert.ok(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
   );
-  assert.deepEqual(network, []);
   assert.deepEqual(errors, []);
   assert.deepEqual(consoleErrors, []);
-  await page.goto("file://" + resolve("archive2/index.html"));
-  await page.click("#demo");
-  await page.waitForFunction(() =>
-    document
-      .querySelector("#status")
-      .textContent.includes("104 input records retained"),
-  );
-  assert.match(await page.textContent("#blocks"), /3 supported/);
-  assert.deepEqual(errors, []);
-  assert.deepEqual(network, []);
+  assert.deepEqual(requests, []);
   console.log(
-    "PASS: manual file:// viewer, real Shift-click merge/hide, undo/redo, conflict veto, paired MAPQ/soft clips, SNP geometry, VAF, hierarchy, scrolling/panning/zoom, JSON/FASTA, BAM/BAI/CSI/2bit/FASTA, missing SEQ, somatic demo, exon scope, responsive layout, privacy reset, no network/CSP errors, archive2.",
+    "PASS: packed shared lanes with pair-specific hit testing, Shift selection, manual merges, consensus geometry, VAF/hierarchy, duplicate filtering, large glyphs, hover off and right-click details, optional hover, independent drawers/top compression, viewport sizing, BAM/BAI/CSI/2bit/FASTA, omitted SEQ, somatic depth, panning, scrolling, reset, responsive layout, no network/CSP errors.",
   );
 } finally {
   await browser.close();

@@ -68,7 +68,12 @@ export class ManualWorkspace {
     this.reference = data.reference;
     this.dataset = data.dataset;
     this.reads = data.reads;
-    this.settings = { mapq: 20, baseq: 20, excludeHidden: true };
+    this.settings = {
+      mapq: 20,
+      baseq: 20,
+      excludeHidden: true,
+      includeDuplicates: false,
+    };
     this.hidden = new Set();
     this.groups = [];
     this.selection = new Set();
@@ -92,6 +97,7 @@ export class ManualWorkspace {
           key,
           name: r.name,
           readIds: [],
+          duplicate: false,
           start: Infinity,
           end: 0,
         };
@@ -100,6 +106,7 @@ export class ManualWorkspace {
       }
       const f = byKey.get(key);
       f.readIds.push(r.id);
+      if (r.flags & 1024) f.duplicate = true;
       if (r.alignmentUsable) {
         f.start = Math.min(f.start, r.start);
         f.end = Math.max(f.end, r.end);
@@ -109,6 +116,11 @@ export class ManualWorkspace {
     this.owner = new Map();
   }
   setSettings(settings) {
+    if (
+      settings.includeDuplicates !== undefined &&
+      typeof settings.includeDuplicates !== "boolean"
+    )
+      throw Error("Invalid duplicate filter");
     for (const k of ["mapq", "baseq"])
       if (
         !Number.isInteger(settings[k]) ||
@@ -180,9 +192,11 @@ export class ManualWorkspace {
     return e;
   }
   activeIDs(ids) {
-    return this.settings.excludeHidden
-      ? ids.filter((id) => !this.hidden.has(id))
-      : ids;
+    return ids.filter(
+      (id) =>
+        (this.settings.includeDuplicates || !this.fragments[id].duplicate) &&
+        (!this.settings.excludeHidden || !this.hidden.has(id)),
+    );
   }
   hideSelection() {
     if (!this.selection.size) throw Error("Select pairs to hide");
@@ -364,11 +378,20 @@ export class ManualWorkspace {
         key: "g:" + g.id,
         kind: "group",
         group: g,
-        members: g.members.filter((id) => showHidden || !this.hidden.has(id)),
+        members: g.members.filter(
+          (id) =>
+            (this.settings.includeDuplicates ||
+              !this.fragments[id].duplicate) &&
+            (showHidden || !this.hidden.has(id)),
+        ),
       });
       if (this.expanded.has(g.id))
         for (const id of g.members)
-          if (showHidden || !this.hidden.has(id))
+          if (
+            (this.settings.includeDuplicates ||
+              !this.fragments[id].duplicate) &&
+            (showHidden || !this.hidden.has(id))
+          )
             rows.push({
               key: "c:" + id,
               kind: "child",
@@ -378,7 +401,10 @@ export class ManualWorkspace {
             });
     }
     const free = this.fragments.filter(
-      (f) => !this.owner.has(f.id) && (showHidden || !this.hidden.has(f.id)),
+      (f) =>
+        !this.owner.has(f.id) &&
+        (this.settings.includeDuplicates || !f.duplicate) &&
+        (showHidden || !this.hidden.has(f.id)),
     );
     const allele = (id) => {
       if (site === null) return "";
@@ -406,6 +432,7 @@ export class ManualWorkspace {
     const n = this.region.end - this.region.start,
       delta = new Int32Array(n + 1);
     for (const f of this.fragments) {
+      if (!this.settings.includeDuplicates && f.duplicate) continue;
       if (this.settings.excludeHidden && this.hidden.has(f.id)) continue;
       const intervals = [];
       for (const id of f.readIds) {
@@ -497,7 +524,9 @@ export class ManualWorkspace {
       !Number.isInteger(s.baseq) ||
       s.baseq < 0 ||
       s.baseq > 93 ||
-      typeof s.excludeHidden !== "boolean"
+      typeof s.excludeHidden !== "boolean" ||
+      (s.includeDuplicates !== undefined &&
+        typeof s.includeDuplicates !== "boolean")
     )
       throw Error("Invalid consensus thresholds in assignment file");
     if (!Array.isArray(d.hidden) || d.hidden.length > this.fragments.length)
@@ -513,7 +542,10 @@ export class ManualWorkspace {
       this.groups = groups;
       this.hidden = hidden;
       this.nextID = groups.length + 1;
-      this.setSettings(s);
+      this.setSettings({
+        ...s,
+        includeDuplicates: s.includeDuplicates ?? false,
+      });
     });
   }
   exportFasta() {

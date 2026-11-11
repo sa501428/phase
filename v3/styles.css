@@ -665,3 +665,251 @@ summary {
     flex-wrap: wrap;
   }
 }
+/* The alignment track gets the available viewport; drawers never reserve empty columns. */
+:root {
+  --header-height: 74px;
+}
+body.top-compact {
+  --header-height: 42px;
+}
+header {
+  height: var(--header-height);
+  min-height: var(--header-height);
+  padding: 8px 14px;
+  gap: 10px;
+}
+.chrome-controls {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.chrome-controls button {
+  font-size: 11px;
+}
+#compactTarget {
+  display: none;
+  font-size: 10px;
+  color: #647e8c;
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.top-compact #compactTarget {
+  display: block;
+}
+body.top-compact header .brand p,
+body.top-compact header nav,
+body.top-compact header .private {
+  display: none;
+}
+body.top-compact header .mark {
+  height: 28px;
+  width: 28px;
+  font-size: 20px;
+}
+body.top-compact header .brand h1 {
+  font-size: 16px;
+}
+body.top-compact header .brand h1 span {
+  display: none;
+}
+body.top-compact .workspace-head {
+  display: none;
+}
+body.top-compact #status:not(.error) {
+  display: none;
+}
+.workspace {
+  height: calc(100vh - var(--header-height));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 10px;
+}
+.workspace-head {
+  flex-shrink: 0;
+  margin: 10px 0;
+}
+.selection-toolbar {
+  flex-shrink: 0;
+  padding: 7px;
+  margin-bottom: 7px;
+  gap: 5px;
+}
+.controls {
+  height: calc(100vh - var(--header-height));
+  overflow-y: auto;
+  min-height: 0;
+}
+.viewer-grid {
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.analysis {
+  display: none;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+body.analysis-open .analysis {
+  display: block;
+}
+body.analysis-open .viewer-grid {
+  grid-template-columns: minmax(0, 1fr) 292px;
+}
+body:not(.inputs-open) .controls {
+  display: none;
+}
+body:not(.inputs-open) main {
+  grid-template-columns: minmax(0, 1fr);
+}
+#readScroll {
+  flex: 1;
+  min-height: 160px;
+  height: auto;
+}
+#pileup {
+  height: 570px;
+  cursor: crosshair;
+}
+#referenceTrack {
+  flex-shrink: 0;
+}
+#accessible {
+  flex-shrink: 0;
+}
+.navigation {
+  padding: 6px 9px;
+  flex-shrink: 0;
+}
+.row-controls,
+.legend,
+.viewer-footer {
+  flex-shrink: 0;
+}
+.legend {
+  padding: 5px 10px;
+}
+.viewer-footer {
+  padding: 5px 9px;
+}
+.row-controls #readSize {
+  width: 88px;
+}
+.read-menu {
+  position: fixed;
+  z-index: 20;
+  width: 235px;
+  background: #fff;
+  border: 1px solid #c6d4de;
+  border-radius: 6px;
+  box-shadow: 0 5px 22px #24394825;
+  padding: 5px;
+}
+.menu-title {
+  font-size: 10px;
+  color: #718897;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 8px;
+  border-bottom: 1px solid #e5ecf1;
+  margin-bottom: 4px;
+}
+.read-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  padding: 8px;
+  font-size: 12px;
+}
+.read-menu button:focus {
+  background: #edf5fa;
+}
+#tooltip {
+  max-width: min(370px, calc(100vw - 20px));
+}
+@media (max-width: 1000px) {
+  header nav,
+  header .private {
+    display: none;
+  }
+  .chrome-controls button {
+    font-size: 10px;
+  }
+  .brand {
+    margin-right: auto;
+  }
+  body.analysis-open .viewer-grid {
+    grid-template-columns: minmax(0, 1fr) 250px;
+  }
+}
+@media (max-width: 750px) {
+  header .brand h1 span,
+  header .brand p {
+    display: none;
+  }
+  header {
+    padding: 5px;
+    gap: 5px;
+  }
+  .chrome-controls {
+    gap: 3px;
+  }
+  .chrome-controls button {
+    font-size: 9px;
+    padding: 6px;
+  }
+  #compactTarget {
+    display: none !important;
+  }
+  main {
+    display: block;
+  }
+  .controls {
+    position: fixed;
+    z-index: 10;
+    top: var(--header-height);
+    left: 0;
+    width: 248px;
+    border-right: 1px solid #cbd9e2;
+    box-shadow: 4px 0 15px #23425218;
+  }
+  .workspace {
+    width: 100%;
+  }
+  body.analysis-open .viewer-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body.analysis-open .analysis {
+    position: fixed;
+    right: 0;
+    top: var(--header-height);
+    width: 290px;
+    height: calc(100vh - var(--header-height));
+    z-index: 9;
+    padding: 8px;
+    background: #eff3f7;
+    box-shadow: -4px 0 15px #23425218;
+  }
+}
+.viewer-grid {
+  align-items: stretch;
+}
+.selection-toolbar .history {
+  margin-left: auto;
+  gap: 4px;
+}
+.legend .del {
+  color: #444;
+}
