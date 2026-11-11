@@ -26,6 +26,11 @@ for (const [name, start, duplicate] of [
       seq = "TGCA" + seq;
       cigar = "4S60M";
     }
+    if (name === "left") {
+      const at = 1070 - start - offset;
+      seq = seq.slice(0, at) + "ACGT" + seq.slice(at);
+      cigar = `${at}M4I${60 - at}M`;
+    }
     reads.push({
       id: reads.length,
       name,
@@ -77,6 +82,23 @@ try {
     if (m.type() === "error") consoleErrors.push(m.text());
   });
   await page.addInitScript(() => {
+    const textOriginal = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (
+      text,
+      x,
+      y,
+      ...args
+    ) {
+      if (["pileup", "referenceTrack"].includes(this.canvas.id))
+        (window.__texts ??= []).push({
+          id: this.canvas.id,
+          text,
+          x,
+          y,
+          align: this.textAlign,
+        });
+      return textOriginal.call(this, text, x, y, ...args);
+    };
     const original = CanvasRenderingContext2D.prototype.fillRect;
     CanvasRenderingContext2D.prototype.fillRect = function (x, y, w, h) {
       if (this.canvas.id === "pileup") {
@@ -153,6 +175,17 @@ try {
   };
   const point = async (name) => {
     const p = await info(name);
+    if (name === "left")
+      p.x = await page.evaluate(() => {
+        const c = document.querySelector("#pileup"),
+          left = +c.dataset.leftMargin;
+        return (
+          left +
+          ((1040 - +c.dataset.viewStart) /
+            (+c.dataset.viewEnd - +c.dataset.viewStart)) *
+            (c.clientWidth - left - 12)
+        );
+      });
     await page.locator("#readScroll").evaluate((e, y) => {
       if (y < e.scrollTop || y > e.scrollTop + e.clientHeight - 10)
         e.scrollTop = Math.max(0, y - 30);
@@ -242,6 +275,25 @@ try {
   assert.ok(narrower < beforeWidth - 200);
   await page.click("#toggleAnalysis");
   assert.ok((await canvas.boundingBox()).width > narrower + 200);
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  const insertion = await page.evaluate(() =>
+    window.__rects.find((r) => r.color === "#7618dc" && r.h >= 14),
+  );
+  assert.ok(insertion);
+  const insertionBox = await canvas.boundingBox();
+  await page.mouse.move(
+    insertionBox.x + insertion.x + insertion.w / 2,
+    insertionBox.y + insertion.y + insertion.h / 2,
+  );
+  await page.waitForFunction(() => !document.querySelector("#tooltip").hidden);
+  assert.match(await page.textContent("#tooltip"), /ACGT/);
+  await page.mouse.click(
+    insertionBox.x + insertion.x + insertion.w / 2,
+    insertionBox.y + insertion.y + insertion.h / 2,
+  );
+  assert.match(await page.textContent("#tooltip"), /ACGT/);
+  assert.equal(await page.textContent("#selected"), "0 pairs selected");
+  await page.click("#viewRange");
   // Group markers and raw markers have the same original CIGAR columns.
   await page.evaluate(() => new Promise(requestAnimationFrame));
   await page.waitForFunction(
@@ -291,6 +343,48 @@ try {
     .click();
   await page.click("#toggleAnalysis");
 
+  await page.fill("#viewRange", "synthetic:1041-1060");
+  await page.evaluate(() => {
+    window.__texts = [];
+    document.querySelector("#readScroll").style.width = "calc(100% - 17px)";
+  });
+  await page.click("#go");
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  const textAlignment = await page.evaluate(() => {
+    const c = document.querySelector("#pileup"),
+      left = +c.dataset.leftMargin,
+      expected =
+        left +
+        ((1050 - +c.dataset.viewStart + 0.5) /
+          (+c.dataset.viewEnd - +c.dataset.viewStart)) *
+          (c.clientWidth - left - 12);
+    const ts = window.__texts || [];
+    return {
+      ref: ts.some(
+        (t) =>
+          t.id === "referenceTrack" &&
+          t.text === "A" &&
+          t.align === "center" &&
+          Math.abs(t.x - expected) < 0.1,
+      ),
+      read: ts.some(
+        (t) =>
+          t.id === "pileup" &&
+          t.text === "C" &&
+          t.align === "center" &&
+          Math.abs(t.x - expected) < 0.1,
+      ),
+    };
+  });
+  assert.ok(
+    textAlignment.ref && textAlignment.read,
+    JSON.stringify(textAlignment),
+  );
+  await page.evaluate(
+    () => (document.querySelector("#readScroll").style.width = ""),
+  );
+  await page.click("#fit");
+  await page.evaluate(() => new Promise(requestAnimationFrame));
   // Hide a selected pair with no destructive removal; undo and restore retain it.
   await clickPair("overlap");
   await page.click("#hide");

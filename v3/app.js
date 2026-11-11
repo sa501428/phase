@@ -181,6 +181,8 @@ function receive({ data: m }) {
       end: 0,
     };
     view.end = view.start + span;
+    $("viewRange").value =
+      `${model.region.chr}:${Math.floor(view.start) + 1}-${Math.ceil(view.end)}`;
     model.setSettings(settings());
     document.body.classList.remove("inputs-open");
     document.body.classList.add("top-compact");
@@ -695,9 +697,12 @@ function resize(canvas, height) {
   c.setTransform(d, 0, 0, d, 0, 0);
   return { c, w, h: height };
 }
+const axisWidth = () =>
+  Math.min(track.clientWidth || 700, pile.clientWidth || 700);
 const xPosition = (p, w) =>
   leftMargin() +
-  ((p - view.start) / (view.end - view.start)) * (w - leftMargin() - 12);
+  ((p - view.start) / (view.end - view.start)) *
+    (axisWidth() - leftMargin() - 12);
 function setView(start, span) {
   if (!model) return;
   const full = model.region.end - model.region.start;
@@ -762,10 +767,8 @@ function drawTrack() {
   c.fillText("Reference", 12, 89);
   c.fillText(activeGene?.name || "Transcript", 12, 118);
   if (!model || !view) return;
-  $("viewRange").value =
-    `${model.region.chr}:${Math.floor(view.start) + 1}-${Math.ceil(view.end)}`;
   const span = view.end - view.start,
-    ppb = (w - left - 12) / span,
+    ppb = (axisWidth() - left - 12) / span,
     step = Math.max(1, Math.pow(10, Math.floor(Math.log10(span / 5)))),
     tick = span / step > 12 ? step * 5 : step;
   c.save();
@@ -811,16 +814,7 @@ function drawTrack() {
     const b = model.reference[p - model.region.start],
       x = xPosition(p, w);
     if (!b) continue;
-    if (ppb >= 8) {
-      c.fillStyle = colors[b] || "#899";
-      c.font = "bold 10px ui-monospace,monospace";
-      c.fillText(b, x + 1, 90);
-    } else {
-      c.fillStyle = colors[b] || "#aaa";
-      c.globalAlpha = 0.35;
-      c.fillRect(x, 78, Math.max(1, ppb), 9);
-      c.globalAlpha = 1;
-    }
+    drawIGVBase(c, b, x, 76, ppb, 18);
   }
   if (
     activeGene &&
@@ -1035,6 +1029,7 @@ function drawPair(c, f, y, w, ppb) {
         hits.push({
           read: r.id,
           fragment: f.id,
+          kind: "insertion",
           x: glyph.left - 2,
           y: yy,
           w: glyph.right - glyph.left + 4,
@@ -1158,15 +1153,19 @@ function drawConsensus(c, g, y, w, ppb) {
       "D",
     );
   }
-  for (const ins of s.insertions)
-    drawIGVInsertion(
-      c,
-      xPosition(ins.pos, w),
-      yy,
+  for (const ins of s.insertions) {
+    const length = Math.max(1, ...ins.values.map((v) => v.value.length)),
+      glyph = drawIGVInsertion(c, xPosition(ins.pos, w), yy, h, length, ppb);
+    hits.push({
+      kind: "insertion",
+      group: g.id,
+      x: glyph.left - 2,
+      y: yy,
+      w: glyph.right - glyph.left + 4,
       h,
-      ins.values[0].value.length,
-      ppb,
-    );
+      detail: `Insertion at ${model.region.chr}:${ins.pos + 1}: ${ins.values.map((v) => v.value || "no insertion").join(" / ")}`,
+    });
+  }
   for (const clip of s.clips) drawClip(c, clip, yy, w, ppb);
   if (!s.bases.length) {
     c.fillStyle = "#8b9ca7";
@@ -1270,10 +1269,19 @@ pile.onpointermove = (e) => {
     }
     return;
   }
-  if (hoverDetails && $("readMenu").hidden) tooltip(e);
+  if ($("readMenu").hidden) {
+    const insertion = insertionAt(e);
+    if (insertion) showInsertion(insertion, e);
+    else if (hoverDetails) tooltip(e);
+    else if (!contextPoint) {
+      $("tooltip").hidden = true;
+      lastTooltip = "";
+    }
+  }
 };
 pile.onpointerup = (e) => {
   if (!drag) return;
+  const clickedInsertion = !drag.moved ? insertionAt(e) : null;
   if (drag.select && drag.moved && boxSelection) {
     const b = boxSelection,
       scroll = $("readScroll").scrollTop,
@@ -1295,13 +1303,17 @@ pile.onpointerup = (e) => {
       anchor = null;
       sizeRows();
       renderAccessible();
-    } else chooseRow(index, e.shiftKey);
+    } else if (!clickedInsertion || e.shiftKey) chooseRow(index, e.shiftKey);
   }
   boxSelection = null;
   drag = null;
   drawReads();
   buttons();
   renderAccessible();
+  if (clickedInsertion) {
+    contextPoint = { clientX: e.clientX, clientY: e.clientY };
+    showInsertion(clickedInsertion, e);
+  }
 };
 pile.onpointercancel = () => {
   drag = null;
@@ -1413,6 +1425,30 @@ document.addEventListener("pointerdown", (e) => {
   if (!$("readMenu").contains(e.target) && e.target !== pile) closeReadMenu();
 });
 
+function insertionAt(e) {
+  const b = pile.getBoundingClientRect(),
+    x = e.clientX - b.left,
+    y = e.clientY - b.top;
+  return [...hits]
+    .reverse()
+    .find(
+      (h) =>
+        h.kind === "insertion" &&
+        x >= h.x &&
+        x <= h.x + h.w &&
+        y >= h.y &&
+        y <= h.y + h.h,
+    );
+}
+function showInsertion(hit, e) {
+  $("tooltip").textContent = hit.detail;
+  $("tooltip").hidden = false;
+  lastTooltip = "insertion:" + hit.detail;
+  $("tooltip").style.left =
+    Math.max(8, Math.min(innerWidth - 390, e.clientX + 14)) + "px";
+  $("tooltip").style.top =
+    Math.max(8, Math.min(innerHeight - 180, e.clientY + 15)) + "px";
+}
 function tooltip(e, force = false) {
   if (!model || (!hoverDetails && !force)) return;
   const { index, x, y } = rowAt(e),
@@ -1445,7 +1481,10 @@ function tooltip(e, force = false) {
     }
   } else {
     const f = row.fragment,
-      r = hit ? model.readById.get(hit.read) : model.readById.get(f.readIds[0]);
+      r =
+        hit?.read !== undefined
+          ? model.readById.get(hit.read)
+          : model.readById.get(f.readIds[0]);
     text = `${f.name}\n${r.flags & 128 ? "Read 2" : r.flags & 64 ? "Read 1" : "Read"} · MAPQ: ${r.mq === 255 ? "unknown (255)" : r.mq}\n${r.chr || model.region.chr}:${r.start + 1}–${r.end} · ${r.flags & 16 ? "reverse" : "forward"}\nCIGAR: ${r.cigar || "unavailable"} · flags: ${r.flags}${r.flags & 1024 ? " · duplicate" : ""}${r.flags & 2048 ? " · supplementary" : ""}${r.flags & 256 ? " · secondary" : ""}\n${f.readIds
       .map((id) => {
         const r = model.readById.get(id);
@@ -1481,10 +1520,10 @@ track.onclick = (e) => {
   if (!model) return;
   const b = track.getBoundingClientRect(),
     x = e.clientX - b.left;
-  if (x < leftMargin()) return;
+  if (x < leftMargin() || x >= axisWidth() - 12) return;
   site = Math.floor(
     view.start +
-      ((x - leftMargin()) / (track.clientWidth - leftMargin() - 12)) *
+      ((x - leftMargin()) / (axisWidth() - leftMargin() - 12)) *
         (view.end - view.start),
   );
   site = Math.max(model.region.start, Math.min(model.region.end - 1, site));
