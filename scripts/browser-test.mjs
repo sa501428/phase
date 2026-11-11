@@ -161,6 +161,28 @@ try {
       scroll = await page.locator("#readScroll").evaluate((e) => e.scrollTop);
     return { ...p, screenX: b.x + p.x, screenY: b.y + p.y - scroll };
   };
+  const clipColors = await page.evaluate(() => {
+    const c = document.querySelector("#pileup"),
+      left = +c.dataset.leftMargin,
+      span = +c.dataset.viewEnd - +c.dataset.viewStart,
+      scale = (c.clientWidth - left - 12) / span;
+    return [..."TGCA"].map((base, i) => ({
+      base,
+      expected: { T: "#ff0000", G: "#d17105", C: "#0000ff", A: "#009600" }[
+        base
+      ],
+      x: left + (1436 + i - +c.dataset.viewStart) * scale,
+      found: window.__rects
+        .filter(
+          (r) =>
+            Math.abs(r.x - (left + (1436 + i - +c.dataset.viewStart) * scale)) <
+            0.1,
+        )
+        .map((r) => r.color),
+    }));
+  });
+  for (const c of clipColors)
+    assert.ok(c.found.includes(c.expected), JSON.stringify(c));
   const left = await point("left"),
     right = await point("right"),
     overlap = await point("overlap");
@@ -240,7 +262,7 @@ try {
     return { x, rects: window.__rects };
   });
   assert.ok(
-    pos.rects.some((r) => r.color === "#3386c9" && Math.abs(r.x - pos.x) < 0.1),
+    pos.rects.some((r) => r.color === "#0000ff" && Math.abs(r.x - pos.x) < 0.1),
   );
   await page.click("#toggleAnalysis");
   await page
@@ -250,6 +272,25 @@ try {
   const a = await info("left"),
     b = await info("right");
   assert.equal(a.y, b.y);
+  await clickPair("left");
+  await clickPair("right", true);
+  await page.click("#merge");
+  assert.equal(await page.textContent("#selected"), "0 pairs selected");
+  await page.locator("#accessible").evaluate((e) => (e.open = true));
+  assert.equal(
+    await page
+      .locator("#accessibleRows button")
+      .filter({ hasText: /^left(?: ✓)?$/ })
+      .count(),
+    0,
+  );
+  await page.locator("#accessible").evaluate((e) => (e.open = false));
+  await page.click("#toggleAnalysis");
+  await page
+    .getByRole("button", { name: "Expand read pairs", exact: true })
+    .click();
+  await page.click("#toggleAnalysis");
+
   // Hide a selected pair with no destructive removal; undo and restore retain it.
   await clickPair("overlap");
   await page.click("#hide");
@@ -266,7 +307,7 @@ try {
   );
   assert.ok(
     await page.evaluate(() =>
-      window.__rects.some((r) => r.h === 24 && r.color === "#aaaeb2"),
+      window.__rects.some((r) => r.h === 24 && r.color === "#c8c8c8"),
     ),
   );
   // Each drawer and the top panel can be collapsed independently.

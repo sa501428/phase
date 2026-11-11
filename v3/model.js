@@ -312,6 +312,7 @@ export class ManualWorkspace {
     );
     if (existing) {
       if (name.trim()) this.rename(existing.id, name);
+      this.selection.clear();
       return existing.id;
     }
     // Iterative manual extension keeps the existing group's identity, color

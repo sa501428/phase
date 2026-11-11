@@ -913,3 +913,30 @@ body:not(.inputs-open) main {
 .legend .del {
   color: #444;
 }
+#mergeFeedback {
+  font-size: 10px;
+  color: #326b7b;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+.legend .a {
+  color: #009600;
+}
+.legend .c {
+  color: #0000ff;
+}
+.legend .g {
+  color: #d17105;
+}
+.legend .t {
+  color: #ff0000;
+}
+.legend .ins {
+  color: #7618dc;
+}
+.legend .clip {
+  color: #657682;
+}
+.legend .clip b {
+  margin-left: 3px;
+}

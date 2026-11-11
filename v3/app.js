@@ -1,3 +1,10 @@
+import {
+  IGV_COLORS,
+  IGV_ALIGNMENT,
+  drawIGVBase,
+  drawIGVInsertion,
+  drawIGVGap,
+} from "./igv-render.js";
 import { ungzip } from "pako";
 import hg19 from "../references/hg19.js";
 import hg38 from "../references/hg38.js";
@@ -12,13 +19,7 @@ const $ = (id) => document.getElementById(id),
     if (cls) e.className = cls;
     return e;
   };
-const colors = {
-    A: "#27915e",
-    C: "#3386c9",
-    G: "#be8c26",
-    T: "#ce536a",
-    N: "#999",
-  },
+const colors = IGV_COLORS,
   palette = [
     "#277e91",
     "#8b64ac",
@@ -274,12 +275,28 @@ $("apply").onclick = () =>
     model.setSettings(settings());
     inspect(inspected);
   }, "Evidence settings applied. Existing assignments retained; conflicting consensus sites are flagged.");
-$("merge").onclick = () =>
-  run(() => {
+$("merge").onclick = () => {
+  const id = run(() => {
     const id = model.merge($("hapName").value);
+    model.selection.clear();
+    model.expanded.delete(id);
     $("hapName").value = "";
     inspected = { kind: "group", id };
-  }, "Selected pairs merged into a manual haplotype. Expand its row to inspect the original read pairs.");
+    return id;
+  }, "Selected pairs merged into a manual haplotype. All pairs deselected. Expand its row to inspect the original read pairs.");
+  if (id !== undefined) {
+    const index = rows.findIndex(
+      (row) => row.kind === "group" && row.group.id === id,
+    );
+    const p = packed.byItem.get(index);
+    if (p) $("readScroll").scrollTop = Math.max(0, p.y - 8);
+    drawReads();
+    renderAccessible();
+    const g = model.groups.find((g) => g.id === id);
+    $("mergeFeedback").textContent =
+      `Merged ${g.name}: ${g.members.length} pairs. Selection cleared.`;
+  } else $("mergeFeedback").textContent = $("status").textContent;
+};
 $("hide").onclick = () =>
   run(() => {
     model.hideSelection();
@@ -516,6 +533,7 @@ function clearWorkspace() {
   $("siteStats").replaceChildren();
   $("siteTitle").textContent = "";
   $("hapName").value = "";
+  $("mergeFeedback").textContent = "";
   for (const key of ["firstRow", "viewStart", "viewEnd", "rowCount"])
     delete pile.dataset[key];
   $("readScroll").scrollTop = 0;
@@ -960,7 +978,7 @@ function drawPair(c, f, y, w, ppb) {
   if (mapped.length > 1) {
     const x1 = xPosition(Math.min(...mapped.map((r) => r.start)), w),
       x2 = xPosition(Math.max(...mapped.map((r) => r.end)), w);
-    c.strokeStyle = "#aaaeb2";
+    c.strokeStyle = IGV_ALIGNMENT;
     c.lineWidth = 1;
     c.beginPath();
     c.moveTo(x1, center);
@@ -970,8 +988,7 @@ function drawPair(c, f, y, w, ppb) {
   }
   for (const r of rs) {
     c.save();
-    if (r.flags & (256 | 512) || r.mq < model.settings.mapq || r.mq === 255)
-      c.globalAlpha *= 0.45;
+    if (r.flags & (256 | 512)) c.globalAlpha *= 0.45;
     if (!r.alignmentUsable) {
       const x = xPosition(Math.max(model.region.start, r.start), w);
       c.fillStyle = "#b3b8be";
@@ -988,7 +1005,7 @@ function drawPair(c, f, y, w, ppb) {
         x = xPosition(p, w),
         end = xPosition(p + n, w);
       if ("M=X".includes(op)) {
-        c.fillStyle = "#aaaeb2";
+        c.fillStyle = IGV_ALIGNMENT;
         if (hasSequence(r) && r.mq !== 0)
           c.fillRect(x, yy, Math.max(1, end - x), h);
         else {
@@ -1011,56 +1028,21 @@ function drawPair(c, f, y, w, ppb) {
               xx = xPosition(pos, w);
             if (xx < leftMargin() - ppb || xx > w) continue;
             const mismatch = ref && b !== ref && b !== "N";
-            if (mismatch) {
-              const a = c.globalAlpha;
-              if (r.qual?.length && r.qual[q + j] < model.settings.baseq)
-                c.globalAlpha *= 0.4;
-              c.fillStyle = colors[b] || "#888";
-              c.fillRect(xx, yy, Math.max(1.5, ppb), h);
-              c.globalAlpha = a;
-            }
-            if (ppb >= 10) {
-              c.fillStyle = mismatch ? "#fff" : "#f7f7f7";
-              c.font = `bold ${Math.min(14, h - 3)}px ui-monospace,monospace`;
-              c.fillText(b, xx + 1, yy + h - 3);
-            }
+            if (mismatch) drawIGVBase(c, b, xx, yy, ppb, h, r.qual?.[q + j]);
           }
       } else if (op === "I") {
-        c.fillStyle = "#9465b9";
-        c.fillRect(x - 1.5, yy, 3, h);
-        c.beginPath();
-        c.moveTo(x, yy + 5);
-        c.lineTo(x - 5, yy);
-        c.lineTo(x + 5, yy);
-        c.fill();
-        if (ppb > 3) {
-          c.fillStyle = "#fff";
-          c.font = "10px sans-serif";
-          c.fillText("+" + n, x + 4, yy + h - 3);
-        }
+        const glyph = drawIGVInsertion(c, x, yy, h, n, ppb);
         hits.push({
           read: r.id,
           fragment: f.id,
-          x: x - 5,
+          x: glyph.left - 2,
           y: yy,
-          w: 12,
+          w: glyph.right - glyph.left + 4,
           h,
           detail: `Insertion at ${p + 1}: ${hasSequence(r) ? r.seq.slice(q, q + n) : "sequence unavailable"}`,
         });
       } else if (op === "D" || op === "N") {
-        c.strokeStyle = op === "D" ? "#444" : "#a1abb3";
-        c.lineWidth = op === "D" ? 2 : 1;
-        c.setLineDash(op === "N" ? [3, 2] : []);
-        c.beginPath();
-        c.moveTo(x, center);
-        c.lineTo(end, center);
-        c.stroke();
-        c.setLineDash([]);
-        if (end - x > 20) {
-          c.fillStyle = "#657781";
-          c.font = "10px sans-serif";
-          c.fillText(`${n}${op}`, x + 2, yy + h - 3);
-        }
+        drawIGVGap(c, x, end, yy, h, n, op);
         hits.push({
           read: r.id,
           fragment: f.id,
@@ -1073,7 +1055,7 @@ function drawPair(c, f, y, w, ppb) {
       } else if (op === "S" && hasSequence(r)) {
         const side = q === 0 ? "left" : "right",
           clip = { pos: p, side, seq: r.seq.slice(q, q + n) };
-        drawClip(c, clip, yy, w, ppb);
+        drawClip(c, clip, yy, w, ppb, r.qual?.slice(q, q + n));
         const from = side === "left" ? p - n : p;
         hits.push({
           read: r.id,
@@ -1086,7 +1068,7 @@ function drawPair(c, f, y, w, ppb) {
         });
       }
     }
-    c.strokeStyle = "#747c82";
+    c.fillStyle = IGV_ALIGNMENT;
     c.lineWidth = 1;
     const arrow = xPosition(r.flags & 16 ? r.start : r.end, w),
       dir = r.flags & 16 ? -1 : 1;
@@ -1094,24 +1076,19 @@ function drawPair(c, f, y, w, ppb) {
     c.moveTo(arrow, yy);
     c.lineTo(arrow + dir * 4, center);
     c.lineTo(arrow, yy + h);
-    c.stroke();
+    c.fill();
     c.restore();
   }
 }
-function drawClip(c, clip, yy, w, ppb) {
+function drawClip(c, clip, yy, w, ppb, qualities) {
   const h = readHeight(),
-    from = clip.side === "left" ? clip.pos - clip.seq.length : clip.pos,
-    x = xPosition(from, w);
-  c.fillStyle = "#b7a1ce";
-  c.globalAlpha *= 0.65;
-  c.fillRect(x, yy, Math.max(2, clip.seq.length * ppb), h);
-  c.globalAlpha /= 0.65;
-  if (ppb >= 10) {
-    c.font = `${Math.min(14, h - 3)}px ui-monospace,monospace`;
-    for (let j = 0; j < clip.seq.length; j++) {
-      c.fillStyle = colors[clip.seq[j]] || "#7d639c";
-      c.fillText(clip.seq[j], xPosition(from + j, w) + 1, yy + h - 3);
-    }
+    from = clip.side === "left" ? clip.pos - clip.seq.length : clip.pos;
+  c.fillStyle = IGV_ALIGNMENT;
+  c.fillRect(xPosition(from, w), yy, clip.seq.length * ppb, h);
+  for (let j = 0; j < clip.seq.length; j++) {
+    const x = xPosition(from + j, w);
+    if (x + ppb < leftMargin() || x > w) continue;
+    drawIGVBase(c, clip.seq[j], x, yy, ppb, h, qualities?.[j]);
   }
 }
 function drawConsensus(c, g, y, w, ppb) {
@@ -1157,31 +1134,39 @@ function drawConsensus(c, g, y, w, ppb) {
       b = call.conflict ? "N" : call.values[0].value,
       ref = model.reference[p - model.region.start];
     if (x < leftMargin() - ppb || x > w) continue;
-    if (b === "-") {
-      c.strokeStyle = "#454545";
-      c.lineWidth = 2;
-      c.beginPath();
-      c.moveTo(x, yy + h / 2);
-      c.lineTo(x + ppb, yy + h / 2);
-      c.stroke();
-    } else {
-      c.fillStyle = call.conflict
-        ? "#dda84e"
-        : b !== ref
-          ? colors[b] || "#999"
-          : color(g.id);
-      if (call.conflict || b !== ref) c.fillRect(x, yy, Math.max(1.3, ppb), h);
-      if (ppb >= 10) {
-        c.fillStyle = "#fff";
-        c.font = `bold ${Math.min(14, h - 3)}px ui-monospace,monospace`;
-        c.fillText(b, x + 1, yy + h - 3);
-      }
+    if (b !== "-" && (call.conflict || b !== ref))
+      drawIGVBase(c, b, x, yy, ppb, h);
+  }
+  const deleted = s.bases.filter(
+    (call) => !call.conflict && call.values[0].value === "-",
+  );
+  for (let i = 0; i < deleted.length;) {
+    const start = deleted[i].pos;
+    let end = start + 1;
+    i++;
+    while (i < deleted.length && deleted[i].pos === end) {
+      end++;
+      i++;
     }
+    drawIGVGap(
+      c,
+      xPosition(start, w),
+      xPosition(end, w),
+      yy,
+      h,
+      end - start,
+      "D",
+    );
   }
-  for (const ins of s.insertions) {
-    c.fillStyle = ins.conflict ? "#d9a74b" : "#9465b9";
-    c.fillRect(xPosition(ins.pos, w) - 1.5, yy, 3, h);
-  }
+  for (const ins of s.insertions)
+    drawIGVInsertion(
+      c,
+      xPosition(ins.pos, w),
+      yy,
+      h,
+      ins.values[0].value.length,
+      ppb,
+    );
   for (const clip of s.clips) drawClip(c, clip, yy, w, ppb);
   if (!s.bases.length) {
     c.fillStyle = "#8b9ca7";

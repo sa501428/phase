@@ -255,3 +255,13 @@ test("iteratively adding selected pairs preserves a haplotype identity, while a 
   assert.equal(m.groups.length, 1);
   assert.deepEqual(m.groups[0].members, [0, 1, 2, 3]);
 });
+
+test("merging an already constructed group again clears every selected pair even without renaming", () => {
+  const m = model();
+  m.selection = new Set([0, 1]);
+  const id = m.merge("H");
+  m.selection = new Set([0, 1]);
+  assert.equal(m.merge(), id);
+  assert.equal(m.selection.size, 0);
+  assert.equal(m.groups.length, 1);
+});
